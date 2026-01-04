@@ -12,6 +12,7 @@
 #include <DHT.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <cmath>
 #include "config.h"
 
 // Sensor reading structure

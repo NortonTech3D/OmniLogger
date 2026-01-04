@@ -116,12 +116,12 @@ public:
     timezoneOffset = prefs.getInt("tzOffset", 0);
     
     // Load measurement settings
-    measurementInterval = max(1U, prefs.getUInt("measInterval", 60));
+    measurementInterval = std::max(1U, prefs.getUInt("measInterval", 60));
     deepSleepEnabled = prefs.getBool("deepSleep", false);
     
     // Load buffering settings
     bufferingEnabled = prefs.getBool("bufferEn", false);
-    flushInterval = max(1U, prefs.getUInt("flushInt", 300));
+    flushInterval = std::max(1U, prefs.getUInt("flushInt", 300));
     
     // Load pin configuration
     sdCardCS = prefs.getInt("sdCS", DEFAULT_SD_CS);
