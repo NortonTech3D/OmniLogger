@@ -250,6 +250,7 @@ private:
   SensorReading readings[Config::MAX_SENSORS];
   SensorType sensorTypes[Config::MAX_SENSORS] = {SENSOR_NONE};
   char sensorNames[Config::MAX_SENSORS][32];
+  int sensorPins[Config::MAX_SENSORS] = {-1};
   int sensorCount;
   
   void cleanup() {
@@ -281,10 +282,12 @@ private:
     if (bme->begin(0x76)) {
       sensorTypes[index] = SENSOR_BME280;
       strcpy(sensorNames[index], config.name);
+      sensorPins[index] = config.pin;
       Serial.println("BME280 initialized successfully");
     } else if (bme->begin(0x77)) {
       sensorTypes[index] = SENSOR_BME280;
       strcpy(sensorNames[index], config.name);
+      sensorPins[index] = config.pin;
       Serial.println("BME280 initialized successfully (alt address)");
     } else {
       Serial.println("Failed to initialize BME280");
@@ -300,6 +303,7 @@ private:
     
     sensorTypes[index] = SENSOR_DHT22;
     strcpy(sensorNames[index], config.name);
+    sensorPins[index] = config.pin;
   }
   
   void initDS18B20(int index, const SensorConfig& config) {
@@ -311,6 +315,7 @@ private:
     
     sensorTypes[index] = SENSOR_DS18B20;
     strcpy(sensorNames[index], config.name);
+    sensorPins[index] = config.pin;
   }
   
   void initAnalog(int index, const SensorConfig& config) {
@@ -319,6 +324,7 @@ private:
     pinMode(config.pin, INPUT);
     sensorTypes[index] = SENSOR_ANALOG;
     strcpy(sensorNames[index], config.name);
+    sensorPins[index] = config.pin;
   }
   
   void readBME280(int index) {
@@ -356,7 +362,9 @@ private:
   }
   
   void readAnalog(int index) {
-    int rawValue = analogRead(sensorTypes[index]);
+    if (sensorPins[index] < 0) return;
+    
+    int rawValue = analogRead(sensorPins[index]);
     readings[index].value = rawValue * (3.3 / 4095.0);
     readings[index].valid = true;
   }
