@@ -25,6 +25,7 @@ A semi-universal data logger system using the Lolin (WEMOS) ESP-32 S2 Mini as th
   - Automatic file rotation by date
   - Timestamped data points
   - Configurable measurement intervals
+  - Optional in-memory buffering with periodic flush to reduce SD card wear
 
 - **Time Synchronization**:
   - Automatic NTP time synchronization
@@ -39,6 +40,7 @@ A semi-universal data logger system using the Lolin (WEMOS) ESP-32 S2 Mini as th
 - **WiFi Connectivity**:
   - Station (STA) mode for connecting to existing WiFi
   - Access Point (AP) mode for standalone operation
+  - Configurable AP SSID and password via web interface
   - Automatic fallback to AP mode if WiFi connection fails
 
 ## Hardware Requirements
@@ -172,7 +174,53 @@ Battery Voltage Monitoring (2:1 voltage divider):
    - Set measurement interval (default: 60 seconds)
    - Configure timezone offset
    - Enable/disable deep sleep mode
+   - Configure WiFi AP settings (SSID and password)
+   - Enable/disable data buffering
+   - Set buffer flush interval (if buffering enabled)
    - Save settings
+
+## Advanced Features
+
+### WiFi Access Point Configuration
+
+You can now customize the WiFi Access Point settings through the web interface:
+
+1. Navigate to the **Settings** tab
+2. Scroll to **WiFi Access Point Configuration**
+3. Enter your desired AP SSID and password (minimum 8 characters)
+4. Click **Save Settings**
+5. Reboot the device for changes to take effect
+
+This is useful when you want to:
+- Use a custom network name for your OmniLogger
+- Set a stronger password for security
+- Distinguish between multiple OmniLogger devices
+
+### Data Buffering
+
+Data buffering is an optional feature that stores sensor readings in the ESP-32's RAM before writing them to the SD card. This provides several benefits:
+
+**Benefits:**
+- **Reduced SD Card Wear**: Fewer write operations extend SD card lifespan
+- **Lower Power Consumption**: Batch writes are more efficient than individual writes
+- **Better Performance**: Measurements complete faster without waiting for SD writes
+
+**How to use:**
+1. Navigate to the **Settings** tab
+2. Check **Enable Data Buffering**
+3. Set the **Flush Interval** (default: 300 seconds / 5 minutes)
+4. Click **Save Settings**
+5. Reboot if needed
+
+**Buffer Capacity:**
+- The buffer can hold up to 100 data points
+- When full, data is automatically flushed to the SD card
+- Buffer status is shown on the Dashboard (e.g., "25 / 100")
+
+**Important Notes:**
+- Buffered data is lost if power is interrupted before a flush
+- For critical applications, keep buffering disabled or use short flush intervals
+- Deep sleep mode automatically flushes the buffer before sleeping
 
 ## Usage
 
@@ -184,6 +232,7 @@ Battery Voltage Monitoring (2:1 voltage divider):
   - SD card health status
   - Active sensor count
   - System uptime
+  - Buffer status (when buffering is enabled)
 - Current sensor readings displayed in real-time
 
 ### Sensors Tab
@@ -198,7 +247,12 @@ Battery Voltage Monitoring (2:1 voltage divider):
 - Configure GPIO pins for digital sensors
 
 ### Settings Tab
-- **WiFi Configuration**: Set SSID and password for station mode
+- **WiFi Station Configuration**: Set SSID and password for connecting to existing WiFi
+- **WiFi Access Point Configuration**: Configure AP SSID and password for standalone mode
+- **Data Buffering**: Enable optional data buffering with configurable flush interval
+  - Store data in ESP-32 memory before writing to SD card
+  - Reduces SD card wear and power consumption
+  - Configurable flush interval (default: 5 minutes)
 - **Measurement Interval**: Set how often sensors are read (in seconds)
 - **Deep Sleep Mode**: Enable for battery-powered operation
 - **Timezone Offset**: Configure timezone for accurate timestamps
