@@ -327,6 +327,19 @@ public:
     file.close();
     return true;
   }
+  
+  bool streamFile(const char* filename, WebServer& server) {
+    if (!initialized) return false;
+    
+    File file = SD.open(filename);
+    if (!file) {
+      return false;
+    }
+    
+    server.streamFile(file, "text/csv");
+    file.close();
+    return true;
+  }
 
 private:
   bool initialized;
@@ -367,6 +380,7 @@ private:
           }
         }
       }
+      file.close();  // Close before getting next!
       file = root.openNextFile();
     }
     

@@ -15,12 +15,13 @@
 
 class WebServerManager {
 public:
-  WebServerManager() : server(80), config(nullptr), sensors(nullptr), logger(nullptr) {}
+  WebServerManager() : server(80), config(nullptr), sensors(nullptr), logger(nullptr), getBatteryVoltage(nullptr) {}
   
-  void begin(Config* cfg, SensorManager* sens, DataLogger* log) {
+  void begin(Config* cfg, SensorManager* sens, DataLogger* log, float (*batteryVoltageFn)() = nullptr) {
     config = cfg;
     sensors = sens;
     logger = log;
+    getBatteryVoltage = batteryVoltageFn;
     
     // Setup routes
     server.on("/", HTTP_GET, [this]() { handleRoot(); });
@@ -49,6 +50,7 @@ private:
   Config* config;
   SensorManager* sensors;
   DataLogger* logger;
+  float (*getBatteryVoltage)();
   
   void handleRoot() {
     String html = R"rawliteral(<!DOCTYPE html>
@@ -623,7 +625,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // System stats
     doc["datapoints"] = logger->getDataPointCount();
-    doc["battery"] = readBatteryVoltage();
+    doc["battery"] = getBatteryVoltage ? getBatteryVoltage() : 0.0f;
     doc["storageTotal"] = String(logger->getTotalSize() / (1024*1024)) + "MB";
     doc["storageUsed"] = String(logger->getUsedSize() / (1024*1024)) + "MB";
     doc["sdHealthy"] = logger->isHealthy();
@@ -832,10 +834,9 @@ document.addEventListener('DOMContentLoaded', function() {
   void handleDownload() {
     if (server.hasArg("file")) {
       String filename = server.arg("file");
-      String content;
       
-      if (logger->downloadFile(filename.c_str(), content)) {
-        server.send(200, "text/csv", content);
+      if (logger->streamFile(filename.c_str(), server)) {
+        // File streamed successfully
       } else {
         server.send(404, "text/plain", "File not found");
       }
@@ -846,18 +847,6 @@ document.addEventListener('DOMContentLoaded', function() {
   
   void handleNotFound() {
     server.send(404, "text/plain", "404: Not found");
-  }
-  
-  float readBatteryVoltage() {
-    const int batteryPin = 1;
-    const float adcMax = 4095.0;
-    const float adcVoltage = 3.3;
-    const float voltageDivider = 2.0;
-    
-    int rawValue = analogRead(batteryPin);
-    float voltage = (rawValue / adcMax) * adcVoltage * voltageDivider;
-    
-    return voltage;
   }
 };
 
