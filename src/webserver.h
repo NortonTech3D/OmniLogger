@@ -630,7 +630,7 @@ document.addEventListener('DOMContentLoaded', function() {
     doc["storageUsed"] = String(logger->getUsedSize() / (1024*1024)) + "MB";
     doc["sdHealthy"] = logger->isHealthy();
     doc["sensorCount"] = sensors->getSensorCount();
-    doc["uptime"] = millis() / 1000;
+    doc["uptime"] = millis() / 1000;  // Note: Resets after ~49.7 days due to millis() overflow
     
     // Buffer stats
     doc["bufferCount"] = logger->getBufferCount();

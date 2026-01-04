@@ -102,9 +102,13 @@ public:
   void load() {
     // Load WiFi settings
     prefs.getString("wifiSSID", wifiSSID, sizeof(wifiSSID));
+    wifiSSID[sizeof(wifiSSID) - 1] = '\0';
     prefs.getString("wifiPass", wifiPassword, sizeof(wifiPassword));
+    wifiPassword[sizeof(wifiPassword) - 1] = '\0';
     prefs.getString("apSSID", apSSID, sizeof(apSSID));
+    apSSID[sizeof(apSSID) - 1] = '\0';
     prefs.getString("apPass", apPassword, sizeof(apPassword));
+    apPassword[sizeof(apPassword) - 1] = '\0';
     
     // Validate AP password length (WPA2 requires min 8 characters)
     if (strlen(apPassword) < 8) {
@@ -140,6 +144,7 @@ public:
       
       snprintf(key, sizeof(key), "s%d_name", i);
       prefs.getString(key, sensors[i].name, sizeof(sensors[i].name));
+      sensors[i].name[sizeof(sensors[i].name) - 1] = '\0';
       
       snprintf(key, sizeof(key), "s%d_en", i);
       sensors[i].enabled = prefs.getBool(key, sensors[i].enabled);

@@ -366,8 +366,12 @@ private:
       if (!file.isDirectory()) {
         String filename = String(file.name());
         if (filename.startsWith("/data_") && filename.endsWith(".csv")) {
-          // Count lines in file (excluding header)
-          File dataFile = SD.open(file.name());
+          // Store filename before any file handle changes
+          String fullPath = filename;
+          file.close();  // Close the directory entry file handle first
+          
+          // Now safely open the data file using the stored path
+          File dataFile = SD.open(fullPath);
           if (dataFile) {
             bool firstLine = true;
             while (dataFile.available()) {
@@ -379,9 +383,13 @@ private:
             }
             dataFile.close();
           }
+          
+          // Continue to next file
+          file = root.openNextFile();
+          continue;
         }
       }
-      file.close();  // Close before getting next!
+      file.close();
       file = root.openNextFile();
     }
     
