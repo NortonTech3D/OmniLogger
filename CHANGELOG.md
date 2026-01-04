@@ -10,94 +10,121 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 #### Core Features
-- Initial release of OmniLogger data logger system
+- Initial public release of OmniLogger data logger system
 - Support for Lolin (WEMOS) ESP32-S2 Mini microcontroller
-- Multi-sensor support architecture (up to 8 sensors)
+- Multi-sensor support architecture (up to 8 sensors simultaneously)
 - SD card data logging with CSV format
 - Web-based configuration and monitoring interface
-- NTP time synchronization
-- Battery voltage monitoring
-- Deep sleep power management
+- NTP time synchronization with configurable timezone
+- Battery voltage monitoring with voltage divider support
+- Deep sleep power management for battery operation
+- Data buffering feature to reduce SD card wear
 
 #### Sensor Support
 - BME280 environmental sensor (I2C)
-  - Temperature measurement
-  - Humidity measurement
-  - Barometric pressure measurement
+  - Temperature measurement (-40°C to +85°C)
+  - Humidity measurement (0-100%)
+  - Barometric pressure measurement (300-1100 hPa)
+  - Range validation for reliable readings
 - DHT22 temperature and humidity sensor
+  - Temperature range: -40°C to +80°C
+  - Humidity range: 0-100%
 - DS18B20 OneWire temperature sensor
+  - Temperature range: -55°C to +125°C
+  - Device disconnection detection
 - Generic analog sensor support (ADC-based)
+  - 12-bit ADC resolution (0-4095)
+  - 0-3.3V input range
 
 #### Web Interface
 - Responsive dashboard with real-time statistics
   - Data point counter
-  - Battery voltage display
+  - Battery voltage display with validation
   - Storage usage tracking
   - SD card health monitoring
   - Active sensor count
-  - System uptime
-  - Current sensor readings
+  - System uptime (handles millis() rollover)
+  - Current sensor readings with auto-refresh
+  - Buffer status display
 - Sensor configuration page
   - Enable/disable individual sensors
-  - Configure sensor types
-  - Set GPIO pins for digital sensors
-  - Custom sensor naming
+  - Configure sensor types (BME280, DHT22, DS18B20, Analog)
+  - Set GPIO pins for digital sensors with validation
+  - Custom sensor naming (up to 31 characters)
 - Settings page
   - WiFi configuration (SSID and password)
-  - Measurement interval adjustment
+  - Access Point configuration with password validation
+  - Data buffering enable/disable
+  - Buffer flush interval configuration
+  - Measurement interval adjustment (1s to 24h)
   - Deep sleep mode toggle
-  - Timezone offset configuration
+  - Timezone offset configuration (-12 to +14)
   - Device reboot function
 - Data management page
-  - File listing
-  - File download functionality
+  - File listing with sizes
+  - CSV file download functionality
+  - Data retrieval API with JSON output
 
 #### Data Logging
-- Automatic CSV file creation with date-based naming
-- Configurable measurement intervals
-- Timestamp for all data points
+- Automatic CSV file creation with date-based naming (data_YYYYMMDD.csv)
+- Configurable measurement intervals (1 second to 24 hours)
+- Accurate timestamps for all data points
 - Dynamic CSV headers based on sensor configuration
-- Daily file rotation
+- Daily automatic file rotation
 - Storage space monitoring
+- In-memory buffering (up to 100 data points)
+- Configurable flush intervals for buffer
 
 #### WiFi Features
 - Access Point (AP) mode for initial configuration
   - Default SSID: "OmniLogger"
-  - Default password: "omnilogger123"
+  - Default password: "omnilogger123" (WPA2-compliant, 8+ chars)
 - Station (STA) mode for network connectivity
 - Automatic fallback to AP mode if connection fails
 - Configurable WiFi credentials via web interface
+- 2.4GHz WiFi support (ESP32-S2 limitation)
 
 #### Power Management
-- Battery voltage monitoring via ADC
+- Battery voltage monitoring via ADC with voltage divider
 - Deep sleep mode for battery operation
 - Configurable sleep intervals
 - Automatic wake and measurement cycles
-- USB power detection
+- USB power detection (5V indication)
+- Pre-sleep buffer flush
 
 #### Configuration System
 - Persistent configuration storage using NVS (Preferences)
 - Web-based configuration interface
 - Default values for first-time setup
-- Configuration import/export capability
+- Input validation for all configurable parameters
+- Configuration save/load with error handling
+
+#### Security Features
+- Input validation for all user inputs
+- Path traversal protection in file operations
+- JSON validation before parsing
+- Bounds checking for array accesses
+- Safe string handling with null termination
+- Password length validation (WPA2 requirements)
+- File size limits for API endpoints
 
 #### Documentation
-- Comprehensive README with setup instructions
-- Quick Start Guide for rapid deployment
-- Detailed wiring diagrams and pin configurations
-- Example configurations for common use cases
-- Troubleshooting guide with solutions
-- Contributing guidelines for developers
-- MIT License
+- Comprehensive README with setup instructions and security section
+- Quick Start Guide for rapid deployment (5 steps)
+- Detailed wiring diagrams and pin configurations (WIRING.md)
+- Example configurations for common use cases (CONFIGURATIONS.md)
+- Troubleshooting guide with solutions (TROUBLESHOOTING.md)
+- Contributing guidelines for developers (CONTRIBUTING.md)
+- AGPL-3.0 License with copyright headers in all source files
 
 ### Technical Details
 
 #### Hardware Support
 - ESP32-S2 based boards (Lolin S2 Mini)
 - I2C sensors on configurable pins (default SDA: GPIO33, SCL: GPIO35)
-- SPI SD card interface (default CS: GPIO12)
-- ADC inputs for analog sensors (GPIO1-10)
-- Digital sensor inputs on any available GPIO
+- SPI SD card interface (default CS: GPIO12, SCK: GPIO7, MISO: GPIO9, MOSI: GPIO11)
+- ADC inputs for analog sensors (GPIO1-10, 12-bit resolution)
+- Digital sensor inputs on any available GPIO (0-45)
 
 #### Software Architecture
 - Modular design with separate components:

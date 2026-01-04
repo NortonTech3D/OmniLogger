@@ -1,6 +1,21 @@
 /*
  * Configuration Management for OmniLogger
  * Handles storing and loading device configuration
+ * 
+ * Copyright (C) 2024 NortonTech3D
+ * 
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ * 
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef CONFIG_H
@@ -198,6 +213,29 @@ public:
     Config defaults;
     *this = defaults;
     save();
+  }
+  
+  // Validation methods
+  bool validateMeasurementInterval(unsigned int interval) const {
+    return interval >= 1 && interval <= 86400;  // Between 1 second and 24 hours
+  }
+  
+  bool validateFlushInterval(unsigned int interval) const {
+    return interval >= 1 && interval <= 3600;  // Between 1 second and 1 hour
+  }
+  
+  bool validateTimezoneOffset(int offset) const {
+    return offset >= -12 && offset <= 14;  // Valid timezone range
+  }
+  
+  bool validatePinNumber(int pin) const {
+    // ESP32-S2 has GPIOs 0-46, but not all are usable
+    // Common safe range for ESP32-S2 Mini
+    return pin >= 0 && pin <= 45;
+  }
+  
+  bool validateAPPassword(const char* password) const {
+    return strlen(password) >= 8 && strlen(password) < 64;
   }
 
 private:

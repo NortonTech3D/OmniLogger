@@ -403,12 +403,12 @@ pin numbering.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+By contributing, you agree that your contributions will be licensed under the GNU Affero General Public License v3.0.
 
 ## Recognition
 
 Contributors will be recognized in:
-- CONTRIBUTORS.md file
+- CONTRIBUTORS.md file (if it exists)
 - Release notes
 - Project documentation
 

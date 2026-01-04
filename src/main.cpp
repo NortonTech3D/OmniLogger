@@ -2,6 +2,21 @@
  * OmniLogger - Semi-Universal Data Logger
  * For Lolin (WEMOS) ESP32-S2 Mini
  * 
+ * Copyright (C) 2024 NortonTech3D
+ * 
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ * 
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ * 
  * Features:
  * - Multi-sensor support (BME280, DHT22, DS18B20, Analog)
  * - SD card data logging
@@ -265,8 +280,23 @@ float readBatteryVoltage() {
   const float adcVoltage = 3.3;
   const float voltageDivider = 2.0;
   
+  // Validate battery pin is configured
+  if (deviceConfig.batteryPin < 0 || deviceConfig.batteryPin > 10) {
+    Serial.println("Warning: Invalid battery pin configured");
+    return 0.0;
+  }
+  
   int rawValue = analogRead(deviceConfig.batteryPin);
+  
+  // Validate ADC reading
+  if (rawValue < 0 || rawValue > 4095) {
+    Serial.printf("Warning: Invalid ADC reading: %d\n", rawValue);
+    return 0.0;
+  }
+  
   float voltage = (rawValue / adcMax) * adcVoltage * voltageDivider;
   
+  // Sanity check: typical LiPo range is 2.5V - 4.2V, with divider we see 5.0V - 8.4V
+  // If reading seems wrong, it might be USB powered (showing ~5V from USB)
   return voltage;
 }
