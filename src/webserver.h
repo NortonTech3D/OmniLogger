@@ -100,6 +100,10 @@ private:
                     <h3>Uptime</h3>
                     <p class="stat-value" id="uptime">-</p>
                 </div>
+                <div class="stat-card">
+                    <h3>Buffer Status</h3>
+                    <p class="stat-value" id="buffer">-</p>
+                </div>
             </div>
             
             <h3>Current Readings</h3>
@@ -120,12 +124,28 @@ private:
         <div id="settings" class="tab-content">
             <h2>System Settings</h2>
             <div class="settings-form">
-                <h3>WiFi Configuration</h3>
+                <h3>WiFi Station Configuration</h3>
                 <label>WiFi SSID:</label>
                 <input type="text" id="wifiSSID" placeholder="Network name">
                 
                 <label>WiFi Password:</label>
                 <input type="password" id="wifiPassword" placeholder="Password">
+                
+                <h3>WiFi Access Point Configuration</h3>
+                <label>AP SSID:</label>
+                <input type="text" id="apSSID" placeholder="Access Point name">
+                
+                <label>AP Password:</label>
+                <input type="password" id="apPassword" placeholder="AP Password (min 8 characters)" minlength="8">
+                
+                <h3>Data Buffering (Optional)</h3>
+                <label>Enable Data Buffering:</label>
+                <input type="checkbox" id="bufferingEnabled">
+                <span>Store data in memory and flush periodically</span>
+                
+                <label>Flush Interval (seconds):</label>
+                <input type="number" id="flushInterval" min="1" value="300">
+                <span>How often to write buffered data to SD card</span>
                 
                 <h3>Measurement Settings</h3>
                 <label>Measurement Interval (seconds):</label>
@@ -423,6 +443,7 @@ function loadStatus() {
             document.getElementById('sdhealth').textContent = data.sdHealthy ? '✓ Healthy' : '✗ Error';
             document.getElementById('sensorcount').textContent = data.sensorCount;
             document.getElementById('uptime').textContent = formatUptime(data.uptime);
+            document.getElementById('buffer').textContent = data.bufferCount + ' / ' + data.bufferCapacity;
             
             // Update readings
             let readingsHTML = '';
@@ -500,6 +521,10 @@ function loadSettings() {
         .then(data => {
             document.getElementById('wifiSSID').value = data.wifiSSID || '';
             document.getElementById('wifiPassword').value = '';
+            document.getElementById('apSSID').value = data.apSSID || '';
+            document.getElementById('apPassword').value = '';
+            document.getElementById('bufferingEnabled').checked = data.bufferingEnabled || false;
+            document.getElementById('flushInterval').value = data.flushInterval || 300;
             document.getElementById('measInterval').value = data.measurementInterval;
             document.getElementById('deepSleep').checked = data.deepSleepEnabled;
             document.getElementById('timezoneOffset').value = data.timezoneOffset;
@@ -511,6 +536,10 @@ function saveSettings() {
     const settings = {
         wifiSSID: document.getElementById('wifiSSID').value,
         wifiPassword: document.getElementById('wifiPassword').value,
+        apSSID: document.getElementById('apSSID').value,
+        apPassword: document.getElementById('apPassword').value,
+        bufferingEnabled: document.getElementById('bufferingEnabled').checked,
+        flushInterval: parseInt(document.getElementById('flushInterval').value),
         measurementInterval: parseInt(document.getElementById('measInterval').value),
         deepSleepEnabled: document.getElementById('deepSleep').checked,
         timezoneOffset: parseInt(document.getElementById('timezoneOffset').value)
@@ -601,6 +630,10 @@ document.addEventListener('DOMContentLoaded', function() {
     doc["sensorCount"] = sensors->getSensorCount();
     doc["uptime"] = millis() / 1000;
     
+    // Buffer stats
+    doc["bufferCount"] = logger->getBufferCount();
+    doc["bufferCapacity"] = logger->getBufferCapacity();
+    
     // Current sensor readings
     JsonArray readings = doc.createNestedArray("readings");
     for (int i = 0; i < Config::MAX_SENSORS; i++) {
@@ -690,7 +723,10 @@ document.addEventListener('DOMContentLoaded', function() {
     DynamicJsonDocument doc(512);
     
     doc["wifiSSID"] = config->wifiSSID;
-    // Don't send password
+    doc["apSSID"] = config->apSSID;
+    // Don't send passwords
+    doc["bufferingEnabled"] = config->bufferingEnabled;
+    doc["flushInterval"] = config->flushInterval;
     doc["measurementInterval"] = config->measurementInterval;
     doc["deepSleepEnabled"] = config->deepSleepEnabled;
     doc["timezoneOffset"] = config->timezoneOffset;
@@ -717,6 +753,21 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       if (doc.containsKey("wifiPassword") && strlen(doc["wifiPassword"]) > 0) {
         strncpy(config->wifiPassword, doc["wifiPassword"], sizeof(config->wifiPassword) - 1);
+      }
+      if (doc.containsKey("apSSID")) {
+        strncpy(config->apSSID, doc["apSSID"], sizeof(config->apSSID) - 1);
+      }
+      if (doc.containsKey("apPassword") && strlen(doc["apPassword"]) > 0) {
+        const char* apPass = doc["apPassword"];
+        if (strlen(apPass) >= 8) {
+          strncpy(config->apPassword, apPass, sizeof(config->apPassword) - 1);
+        }
+      }
+      if (doc.containsKey("bufferingEnabled")) {
+        config->bufferingEnabled = doc["bufferingEnabled"];
+      }
+      if (doc.containsKey("flushInterval")) {
+        config->flushInterval = doc["flushInterval"];
       }
       if (doc.containsKey("measurementInterval")) {
         config->measurementInterval = doc["measurementInterval"];

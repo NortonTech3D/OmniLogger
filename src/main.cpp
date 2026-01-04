@@ -78,6 +78,12 @@ void setup() {
     Serial.println("SD card initialized successfully");
   }
   
+  // Configure data buffering
+  dataLogger.setBufferingEnabled(deviceConfig.bufferingEnabled);
+  if (deviceConfig.bufferingEnabled) {
+    Serial.printf("Data buffering enabled with %d second flush interval\n", deviceConfig.flushInterval);
+  }
+  
   // Initialize sensors
   sensorManager.begin(deviceConfig);
   Serial.printf("Initialized %d sensors\n", sensorManager.getSensorCount());
@@ -101,6 +107,13 @@ void setup() {
 void loop() {
   // Handle web server
   webServer.handleClient();
+  
+  // Check if buffered data should be flushed
+  if (deviceConfig.bufferingEnabled && 
+      dataLogger.shouldFlush(deviceConfig.flushInterval * 1000UL)) {
+    Serial.println("Periodic buffer flush triggered");
+    dataLogger.flushBuffer();
+  }
   
   // Check if it's time for a measurement
   unsigned long currentTime = millis();
