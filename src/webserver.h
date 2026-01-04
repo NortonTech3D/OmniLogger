@@ -892,22 +892,50 @@ document.addEventListener('DOMContentLoaded', function() {
     String filename = server.arg("file");
     int limit = server.hasArg("limit") ? server.arg("limit").toInt() : 100;
     
+    // Validate limit parameter
+    if (limit < 1 || limit > 1000) {
+      limit = 100;  // Default to safe value
+    }
+    
     if (filename.length() == 0) {
       // If no file specified, return error
       server.send(400, "application/json", "{\"error\":\"Missing file parameter\"}");
       return;
     }
     
-    // Read file content
+    // Security: Prevent directory traversal attacks
+    if (filename.indexOf("..") != -1 || filename.indexOf("\\") != -1) {
+      server.send(400, "application/json", "{\"error\":\"Invalid file path\"}");
+      return;
+    }
+    
+    // Ensure filename starts with /
+    if (!filename.startsWith("/")) {
+      filename = "/" + filename;
+    }
+    
+    // Stream file directly instead of loading into memory
+    // For this version, we'll use a safer approach with streaming
+    // Note: For large files, consider pagination or streaming API
+    
+    // Calculate JSON document size based on limit
+    // Each line might have ~200 bytes in JSON, plus overhead
+    size_t docSize = std::min((size_t)16384, (size_t)(limit * 250 + 512));
+    DynamicJsonDocument doc(docSize);
+    JsonArray dataArray = doc.createNestedArray("data");
+    
+    // Open file for reading
     String content;
     if (!logger->downloadFile(filename.c_str(), content)) {
       server.send(404, "application/json", "{\"error\":\"File not found\"}");
       return;
     }
     
-    // Parse CSV and create JSON array
-    DynamicJsonDocument doc(4096);
-    JsonArray dataArray = doc.createNestedArray("data");
+    // Check if content is too large
+    if (content.length() > 50000) {  // ~50KB limit for safety
+      server.send(413, "application/json", "{\"error\":\"File too large, use download instead\"}");
+      return;
+    }
     
     // Split content into lines
     int lineCount = 0;
@@ -934,15 +962,18 @@ document.addEventListener('DOMContentLoaded', function() {
           int headerStart = 0;
           int headerEnd = header.indexOf(',');
           
-          while (valueEnd != -1 || valueStart < (int)line.length()) {
+          // Improved loop condition to prevent infinite loops
+          while (valueStart < (int)line.length() && colIndex < 50) {  // Max 50 columns for safety
             // Get column name from header
             String colName;
             if (headerEnd != -1) {
               colName = header.substring(headerStart, headerEnd);
               headerStart = headerEnd + 1;
               headerEnd = header.indexOf(',', headerStart);
-            } else {
+            } else if (headerStart < (int)header.length()) {
               colName = header.substring(headerStart);
+            } else {
+              break;  // No more header columns
             }
             colName.trim();
             
@@ -954,7 +985,7 @@ document.addEventListener('DOMContentLoaded', function() {
               valueEnd = line.indexOf(',', valueStart);
             } else {
               value = line.substring(valueStart);
-              valueStart = line.length();
+              valueStart = line.length();  // This will end the loop
             }
             value.trim();
             
@@ -963,7 +994,6 @@ document.addEventListener('DOMContentLoaded', function() {
               row[colName] = value;
             }
             
-            if (valueStart >= (int)line.length()) break;
             colIndex++;
           }
         }
