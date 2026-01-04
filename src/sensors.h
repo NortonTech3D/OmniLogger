@@ -1,6 +1,21 @@
 /*
  * Sensor Management for OmniLogger
  * Handles multiple sensor types and reading data
+ * 
+ * Copyright (C) 2024 NortonTech3D
+ * 
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ * 
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef SENSORS_H
@@ -337,51 +352,79 @@ private:
   }
   
   void readBME280(int index) {
-    if (!bmeSensors[index]) return;
+    if (index < 0 || index >= Config::MAX_SENSORS || !bmeSensors[index]) return;
     
     float temp = bmeSensors[index]->readTemperature();
     float hum = bmeSensors[index]->readHumidity();
     float pres = bmeSensors[index]->readPressure() / 100.0F;
     
-    if (!isnan(temp) && !isnan(hum) && !isnan(pres)) {
+    // Validate readings are within reasonable ranges
+    if (!isnan(temp) && !isnan(hum) && !isnan(pres) &&
+        temp >= -40.0 && temp <= 85.0 &&      // BME280 operating range
+        hum >= 0.0 && hum <= 100.0 &&         // Valid humidity range
+        pres >= 300.0 && pres <= 1100.0) {    // Valid pressure range
       readings[index].temperature = temp;
       readings[index].humidity = hum;
       readings[index].pressure = pres;
       readings[index].valid = true;
+    } else {
+      readings[index].valid = false;
+      Serial.printf("BME280 sensor %d: Invalid readings detected\n", index);
     }
   }
   
   void readDHT22(int index) {
-    if (!dhtSensors[index]) return;
+    if (index < 0 || index >= Config::MAX_SENSORS || !dhtSensors[index]) return;
     
     float temp = dhtSensors[index]->readTemperature();
     float hum = dhtSensors[index]->readHumidity();
     
-    if (!isnan(temp) && !isnan(hum)) {
+    // Validate readings are within DHT22 specs
+    if (!isnan(temp) && !isnan(hum) &&
+        temp >= -40.0 && temp <= 80.0 &&      // DHT22 operating range
+        hum >= 0.0 && hum <= 100.0) {         // Valid humidity range
       readings[index].temperature = temp;
       readings[index].humidity = hum;
       readings[index].valid = true;
+    } else {
+      readings[index].valid = false;
+      Serial.printf("DHT22 sensor %d: Invalid readings detected\n", index);
     }
   }
   
   void readDS18B20(int index) {
-    if (!dallasSensors[index]) return;
+    if (index < 0 || index >= Config::MAX_SENSORS || !dallasSensors[index]) return;
     
     dallasSensors[index]->requestTemperatures();
     float temp = dallasSensors[index]->getTempCByIndex(0);
     
-    if (temp != DEVICE_DISCONNECTED_C) {
+    // Validate temperature is within DS18B20 range
+    if (temp != DEVICE_DISCONNECTED_C && 
+        temp >= -55.0 && temp <= 125.0) {     // DS18B20 operating range
       readings[index].temperature = temp;
       readings[index].valid = true;
+    } else {
+      readings[index].valid = false;
+      if (temp == DEVICE_DISCONNECTED_C) {
+        Serial.printf("DS18B20 sensor %d: Device disconnected\n", index);
+      } else {
+        Serial.printf("DS18B20 sensor %d: Invalid reading\n", index);
+      }
     }
   }
   
   void readAnalog(int index) {
-    if (sensorPins[index] < 0) return;
+    if (index < 0 || index >= Config::MAX_SENSORS || sensorPins[index] < 0) return;
     
     int rawValue = analogRead(sensorPins[index]);
-    readings[index].value = rawValue * (3.3 / 4095.0);
-    readings[index].valid = true;
+    // ESP32 ADC is 12-bit (0-4095)
+    if (rawValue >= 0 && rawValue <= 4095) {
+      readings[index].value = rawValue * (3.3 / 4095.0);
+      readings[index].valid = true;
+    } else {
+      readings[index].valid = false;
+      Serial.printf("Analog sensor %d: Invalid ADC reading\n", index);
+    }
   }
 };
 

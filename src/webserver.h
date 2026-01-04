@@ -1,6 +1,21 @@
 /*
  * Web Server for OmniLogger
  * Provides web interface for monitoring and configuration
+ * 
+ * Copyright (C) 2024 NortonTech3D
+ * 
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ * 
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef WEBSERVER_H
@@ -696,15 +711,48 @@ document.addEventListener('DOMContentLoaded', function() {
   void handleSetSensors() {
     if (server.hasArg("plain")) {
       DynamicJsonDocument doc(2048);
-      deserializeJson(doc, server.arg("plain"));
+      DeserializationError error = deserializeJson(doc, server.arg("plain"));
+      
+      if (error) {
+        server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+        return;
+      }
       
       JsonArray sensorsArray = doc["sensors"];
-      for (int i = 0; i < Config::MAX_SENSORS && i < sensorsArray.size(); i++) {
-        JsonObject s = sensorsArray[i];
-        config->sensors[i].enabled = s["enabled"];
-        strncpy(config->sensors[i].name, s["name"], sizeof(config->sensors[i].name) - 1);
-        config->sensors[i].type = (SensorType)(int)s["type"];
-        config->sensors[i].pin = s["pin"];
+      if (!sensorsArray.isNull()) {
+        for (int i = 0; i < Config::MAX_SENSORS && i < (int)sensorsArray.size(); i++) {
+          JsonObject s = sensorsArray[i];
+          
+          // Validate and update enabled status
+          if (s.containsKey("enabled")) {
+            config->sensors[i].enabled = s["enabled"];
+          }
+          
+          // Validate and update sensor name
+          if (s.containsKey("name")) {
+            const char* name = s["name"];
+            if (strlen(name) < 32) {
+              strncpy(config->sensors[i].name, name, sizeof(config->sensors[i].name) - 1);
+              config->sensors[i].name[sizeof(config->sensors[i].name) - 1] = '\0';
+            }
+          }
+          
+          // Validate and update sensor type
+          if (s.containsKey("type")) {
+            int type = s["type"];
+            if (type >= SENSOR_NONE && type <= SENSOR_ANALOG) {
+              config->sensors[i].type = (SensorType)type;
+            }
+          }
+          
+          // Validate and update pin number
+          if (s.containsKey("pin")) {
+            int pin = s["pin"];
+            if (config->validatePinNumber(pin) || pin == -1 || pin == 0) {
+              config->sensors[i].pin = pin;
+            }
+          }
+        }
       }
       
       config->save();
@@ -741,7 +789,12 @@ document.addEventListener('DOMContentLoaded', function() {
   void handleSetSettings() {
     if (server.hasArg("plain")) {
       DynamicJsonDocument doc(512);
-      deserializeJson(doc, server.arg("plain"));
+      DeserializationError error = deserializeJson(doc, server.arg("plain"));
+      
+      if (error) {
+        server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+        return;
+      }
       
       if (doc.containsKey("reboot") && doc["reboot"]) {
         server.send(200, "application/json", "{\"message\":\"Rebooting...\"}");
@@ -750,35 +803,74 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
       }
       
+      // Validate and update WiFi SSID
       if (doc.containsKey("wifiSSID")) {
-        strncpy(config->wifiSSID, doc["wifiSSID"], sizeof(config->wifiSSID) - 1);
-      }
-      if (doc.containsKey("wifiPassword") && strlen(doc["wifiPassword"]) > 0) {
-        strncpy(config->wifiPassword, doc["wifiPassword"], sizeof(config->wifiPassword) - 1);
-      }
-      if (doc.containsKey("apSSID")) {
-        strncpy(config->apSSID, doc["apSSID"], sizeof(config->apSSID) - 1);
-      }
-      if (doc.containsKey("apPassword") && strlen(doc["apPassword"]) > 0) {
-        const char* apPass = doc["apPassword"];
-        if (strlen(apPass) >= 8) {
-          strncpy(config->apPassword, apPass, sizeof(config->apPassword) - 1);
+        const char* ssid = doc["wifiSSID"];
+        if (strlen(ssid) < 64) {
+          strncpy(config->wifiSSID, ssid, sizeof(config->wifiSSID) - 1);
+          config->wifiSSID[sizeof(config->wifiSSID) - 1] = '\0';
         }
       }
+      
+      // Validate and update WiFi password
+      if (doc.containsKey("wifiPassword") && strlen(doc["wifiPassword"]) > 0) {
+        const char* pass = doc["wifiPassword"];
+        if (strlen(pass) < 64) {
+          strncpy(config->wifiPassword, pass, sizeof(config->wifiPassword) - 1);
+          config->wifiPassword[sizeof(config->wifiPassword) - 1] = '\0';
+        }
+      }
+      
+      // Validate and update AP SSID
+      if (doc.containsKey("apSSID")) {
+        const char* ssid = doc["apSSID"];
+        if (strlen(ssid) > 0 && strlen(ssid) < 64) {
+          strncpy(config->apSSID, ssid, sizeof(config->apSSID) - 1);
+          config->apSSID[sizeof(config->apSSID) - 1] = '\0';
+        }
+      }
+      
+      // Validate and update AP password (must be 8+ characters)
+      if (doc.containsKey("apPassword") && strlen(doc["apPassword"]) > 0) {
+        const char* apPass = doc["apPassword"];
+        if (config->validateAPPassword(apPass)) {
+          strncpy(config->apPassword, apPass, sizeof(config->apPassword) - 1);
+          config->apPassword[sizeof(config->apPassword) - 1] = '\0';
+        }
+      }
+      
+      // Update buffering settings
       if (doc.containsKey("bufferingEnabled")) {
         config->bufferingEnabled = doc["bufferingEnabled"];
       }
+      
+      // Validate and update flush interval
       if (doc.containsKey("flushInterval")) {
-        config->flushInterval = doc["flushInterval"];
+        unsigned int interval = doc["flushInterval"];
+        if (config->validateFlushInterval(interval)) {
+          config->flushInterval = interval;
+        }
       }
+      
+      // Validate and update measurement interval
       if (doc.containsKey("measurementInterval")) {
-        config->measurementInterval = doc["measurementInterval"];
+        unsigned int interval = doc["measurementInterval"];
+        if (config->validateMeasurementInterval(interval)) {
+          config->measurementInterval = interval;
+        }
       }
+      
+      // Update deep sleep setting
       if (doc.containsKey("deepSleepEnabled")) {
         config->deepSleepEnabled = doc["deepSleepEnabled"];
       }
+      
+      // Validate and update timezone offset
       if (doc.containsKey("timezoneOffset")) {
-        config->timezoneOffset = doc["timezoneOffset"];
+        int offset = doc["timezoneOffset"];
+        if (config->validateTimezoneOffset(offset)) {
+          config->timezoneOffset = offset;
+        }
       }
       
       config->save();
@@ -796,8 +888,98 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   
   void handleGetData() {
-    // TODO: Implement data retrieval
-    server.send(200, "application/json", "{\"data\":[]}");
+    // Get query parameters
+    String filename = server.arg("file");
+    int limit = server.hasArg("limit") ? server.arg("limit").toInt() : 100;
+    
+    if (filename.length() == 0) {
+      // If no file specified, return error
+      server.send(400, "application/json", "{\"error\":\"Missing file parameter\"}");
+      return;
+    }
+    
+    // Read file content
+    String content;
+    if (!logger->downloadFile(filename.c_str(), content)) {
+      server.send(404, "application/json", "{\"error\":\"File not found\"}");
+      return;
+    }
+    
+    // Parse CSV and create JSON array
+    DynamicJsonDocument doc(4096);
+    JsonArray dataArray = doc.createNestedArray("data");
+    
+    // Split content into lines
+    int lineCount = 0;
+    int startPos = 0;
+    int endPos = content.indexOf('\n');
+    String header = "";
+    
+    while (endPos != -1 && lineCount < limit) {
+      String line = content.substring(startPos, endPos);
+      line.trim();
+      
+      if (line.length() > 0) {
+        if (lineCount == 0) {
+          // First line is header
+          header = line;
+        } else {
+          // Data lines
+          JsonObject row = dataArray.createNestedObject();
+          
+          // Parse CSV values
+          int colIndex = 0;
+          int valueStart = 0;
+          int valueEnd = line.indexOf(',');
+          int headerStart = 0;
+          int headerEnd = header.indexOf(',');
+          
+          while (valueEnd != -1 || valueStart < (int)line.length()) {
+            // Get column name from header
+            String colName;
+            if (headerEnd != -1) {
+              colName = header.substring(headerStart, headerEnd);
+              headerStart = headerEnd + 1;
+              headerEnd = header.indexOf(',', headerStart);
+            } else {
+              colName = header.substring(headerStart);
+            }
+            colName.trim();
+            
+            // Get value
+            String value;
+            if (valueEnd != -1) {
+              value = line.substring(valueStart, valueEnd);
+              valueStart = valueEnd + 1;
+              valueEnd = line.indexOf(',', valueStart);
+            } else {
+              value = line.substring(valueStart);
+              valueStart = line.length();
+            }
+            value.trim();
+            
+            // Add to JSON object
+            if (colName.length() > 0) {
+              row[colName] = value;
+            }
+            
+            if (valueStart >= (int)line.length()) break;
+            colIndex++;
+          }
+        }
+        lineCount++;
+      }
+      
+      startPos = endPos + 1;
+      endPos = content.indexOf('\n', startPos);
+    }
+    
+    doc["count"] = dataArray.size();
+    doc["file"] = filename;
+    
+    String response;
+    serializeJson(doc, response);
+    server.send(200, "application/json", response);
   }
   
   void handleListFiles() {
@@ -834,6 +1016,17 @@ document.addEventListener('DOMContentLoaded', function() {
   void handleDownload() {
     if (server.hasArg("file")) {
       String filename = server.arg("file");
+      
+      // Security: Prevent directory traversal attacks
+      if (filename.indexOf("..") != -1 || filename.indexOf("\\") != -1) {
+        server.send(400, "text/plain", "Invalid file path");
+        return;
+      }
+      
+      // Ensure filename starts with /
+      if (!filename.startsWith("/")) {
+        filename = "/" + filename;
+      }
       
       if (logger->streamFile(filename.c_str(), server)) {
         // File streamed successfully
