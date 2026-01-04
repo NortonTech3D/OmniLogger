@@ -26,12 +26,13 @@ struct SensorReading {
 
 class SensorManager {
 public:
-  SensorManager() : bme(nullptr) {
+  SensorManager() : sensorCount(0) {
     for (int i = 0; i < Config::MAX_SENSORS; i++) {
       readings[i].valid = false;
       dhtSensors[i] = nullptr;
       dallasSensors[i] = nullptr;
       oneWireSensors[i] = nullptr;
+      bmeSensors[i] = nullptr;
     }
   }
   
@@ -246,7 +247,7 @@ public:
   }
 
 private:
-  Adafruit_BME280* bme;
+  Adafruit_BME280* bmeSensors[Config::MAX_SENSORS];
   DHT* dhtSensors[Config::MAX_SENSORS];
   DallasTemperature* dallasSensors[Config::MAX_SENSORS];
   OneWire* oneWireSensors[Config::MAX_SENSORS];
@@ -258,11 +259,11 @@ private:
   int sensorCount;
   
   void cleanup() {
-    if (bme) {
-      delete bme;
-      bme = nullptr;
-    }
     for (int i = 0; i < Config::MAX_SENSORS; i++) {
+      if (bmeSensors[i]) {
+        delete bmeSensors[i];
+        bmeSensors[i] = nullptr;
+      }
       if (dhtSensors[i]) {
         delete dhtSensors[i];
         dhtSensors[i] = nullptr;
@@ -281,24 +282,21 @@ private:
   void initBME280(int index, const SensorConfig& config) {
     Serial.printf("Initializing BME280 sensor %d...\n", index);
     
-    if (!bme) {
-      bme = new Adafruit_BME280();
-    }
+    bmeSensors[index] = new Adafruit_BME280();
     
-    if (bme->begin(0x76)) {
+    // Use config.pin to determine address: 0 = 0x76, 1 = 0x77
+    uint8_t addr = (config.pin == 1) ? 0x77 : 0x76;
+    
+    if (bmeSensors[index]->begin(addr)) {
       sensorTypes[index] = SENSOR_BME280;
       strncpy(sensorNames[index], config.name, sizeof(sensorNames[index]) - 1);
       sensorNames[index][sizeof(sensorNames[index]) - 1] = '\0';
       sensorPins[index] = config.pin;
-      Serial.println("BME280 initialized successfully");
-    } else if (bme->begin(0x77)) {
-      sensorTypes[index] = SENSOR_BME280;
-      strncpy(sensorNames[index], config.name, sizeof(sensorNames[index]) - 1);
-      sensorNames[index][sizeof(sensorNames[index]) - 1] = '\0';
-      sensorPins[index] = config.pin;
-      Serial.println("BME280 initialized successfully (alt address)");
+      Serial.printf("BME280 initialized successfully at address 0x%02X\n", addr);
     } else {
-      Serial.println("Failed to initialize BME280");
+      delete bmeSensors[index];
+      bmeSensors[index] = nullptr;
+      Serial.printf("Failed to initialize BME280 at address 0x%02X\n", addr);
       sensorTypes[index] = SENSOR_NONE;
     }
   }
@@ -339,11 +337,11 @@ private:
   }
   
   void readBME280(int index) {
-    if (!bme) return;
+    if (!bmeSensors[index]) return;
     
-    float temp = bme->readTemperature();
-    float hum = bme->readHumidity();
-    float pres = bme->readPressure() / 100.0F;
+    float temp = bmeSensors[index]->readTemperature();
+    float hum = bmeSensors[index]->readHumidity();
+    float pres = bmeSensors[index]->readPressure() / 100.0F;
     
     if (!isnan(temp) && !isnan(hum) && !isnan(pres)) {
       readings[index].temperature = temp;
