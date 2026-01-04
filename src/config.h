@@ -45,6 +45,10 @@ public:
   unsigned int measurementInterval;  // Seconds between measurements
   bool deepSleepEnabled;
   
+  // Data buffering settings
+  bool bufferingEnabled;
+  unsigned int flushInterval;  // Seconds between buffer flushes to SD card
+  
   // Pin configuration
   int sdCardCS;
   int i2cSDA;
@@ -64,6 +68,9 @@ public:
     timezoneOffset = 0;
     measurementInterval = 60;  // Default 60 seconds
     deepSleepEnabled = false;
+    
+    bufferingEnabled = false;
+    flushInterval = 300;  // Default 5 minutes
     
     sdCardCS = DEFAULT_SD_CS;
     i2cSDA = DEFAULT_I2C_SDA;
@@ -102,6 +109,10 @@ public:
     measurementInterval = prefs.getUInt("measInterval", 60);
     deepSleepEnabled = prefs.getBool("deepSleep", false);
     
+    // Load buffering settings
+    bufferingEnabled = prefs.getBool("bufferEn", false);
+    flushInterval = prefs.getUInt("flushInt", 300);
+    
     // Load pin configuration
     sdCardCS = prefs.getInt("sdCS", DEFAULT_SD_CS);
     i2cSDA = prefs.getInt("i2cSDA", DEFAULT_I2C_SDA);
@@ -137,6 +148,10 @@ public:
     // Save measurement settings
     prefs.putUInt("measInterval", measurementInterval);
     prefs.putBool("deepSleep", deepSleepEnabled);
+    
+    // Save buffering settings
+    prefs.putBool("bufferEn", bufferingEnabled);
+    prefs.putUInt("flushInt", flushInterval);
     
     // Save pin configuration
     prefs.putInt("sdCS", sdCardCS);

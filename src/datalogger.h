@@ -12,10 +12,16 @@
 
 class DataLogger {
 public:
-  DataLogger() : initialized(false), fileOpen(false), totalDataPoints(0) {}
+  DataLogger() : initialized(false), fileOpen(false), totalDataPoints(0), 
+                 bufferEnabled(false), bufferCount(0), lastFlushTime(0) {
+    for (int i = 0; i < MAX_BUFFER_SIZE; i++) {
+      buffer[i] = "";
+    }
+  }
   
   bool begin(int csPin) {
     this->csPin = csPin;
+    lastFlushTime = millis();
     
     Serial.println("Initializing SD card...");
     
@@ -59,6 +65,31 @@ public:
   }
   
   bool logData(const String& data) {
+    if (!initialized && !bufferEnabled) {
+      Serial.println("SD card not initialized and buffering disabled!");
+      return false;
+    }
+    
+    // If buffering is enabled, add to buffer
+    if (bufferEnabled) {
+      if (bufferCount < MAX_BUFFER_SIZE) {
+        buffer[bufferCount++] = data;
+        Serial.printf("Data buffered (count: %d/%d)\n", bufferCount, MAX_BUFFER_SIZE);
+        return true;
+      } else {
+        // Buffer full, force flush then add current data
+        Serial.println("Buffer full, forcing flush...");
+        flushBuffer();
+        buffer[bufferCount++] = data;
+        return true;
+      }
+    }
+    
+    // Direct write to SD card (original behavior)
+    return writeToSD(data);
+  }
+  
+  bool writeToSD(const String& data) {
     if (!initialized) {
       Serial.println("SD card not initialized!");
       return false;
@@ -127,7 +158,66 @@ public:
   }
   
   void flush() {
+    if (bufferEnabled && bufferCount > 0) {
+      flushBuffer();
+    }
     // SD library auto-flushes on close
+  }
+  
+  void setBufferingEnabled(bool enabled) {
+    bufferEnabled = enabled;
+    Serial.printf("Data buffering %s\n", enabled ? "enabled" : "disabled");
+  }
+  
+  bool flushBuffer() {
+    if (!initialized) {
+      Serial.println("Cannot flush buffer - SD card not initialized!");
+      return false;
+    }
+    
+    if (bufferCount == 0) {
+      return true;  // Nothing to flush
+    }
+    
+    Serial.printf("Flushing %d buffered data points to SD card...\n", bufferCount);
+    
+    int successCount = 0;
+    int totalCount = bufferCount;
+    for (int i = 0; i < totalCount; i++) {
+      if (writeToSD(buffer[i])) {
+        successCount++;
+      }
+    }
+    
+    // Clear buffer
+    bufferCount = 0;
+    lastFlushTime = millis();
+    
+    Serial.printf("Flushed %d/%d data points successfully\n", successCount, totalCount);
+    return successCount > 0;
+  }
+  
+  bool shouldFlush(unsigned long flushIntervalMs) {
+    if (!bufferEnabled || bufferCount == 0) {
+      return false;
+    }
+    
+    unsigned long currentTime = millis();
+    // Handle millis() rollover
+    if (currentTime < lastFlushTime) {
+      lastFlushTime = currentTime;
+      return false;
+    }
+    
+    return (currentTime - lastFlushTime) >= flushIntervalMs;
+  }
+  
+  int getBufferCount() const {
+    return bufferCount;
+  }
+  
+  int getBufferCapacity() const {
+    return MAX_BUFFER_SIZE;
   }
   
   uint64_t getTotalSize() const {
@@ -239,6 +329,13 @@ private:
   bool fileOpen;
   int csPin;
   uint32_t totalDataPoints;
+  
+  // Data buffering
+  static const int MAX_BUFFER_SIZE = 100;  // Buffer up to 100 data points
+  String buffer[MAX_BUFFER_SIZE];
+  int bufferCount;
+  bool bufferEnabled;
+  unsigned long lastFlushTime;
   
   void countDataPoints() {
     totalDataPoints = 0;
