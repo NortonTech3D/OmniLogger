@@ -203,13 +203,17 @@ public:
     }
     
     unsigned long currentTime = millis();
-    // Handle millis() rollover
-    if (currentTime < lastFlushTime) {
-      lastFlushTime = currentTime;
-      return false;
+    unsigned long elapsed;
+    
+    // Handle millis() rollover (occurs every ~49.7 days)
+    if (currentTime >= lastFlushTime) {
+      elapsed = currentTime - lastFlushTime;
+    } else {
+      // Rollover occurred
+      elapsed = (0xFFFFFFFF - lastFlushTime) + currentTime + 1;
     }
     
-    return (currentTime - lastFlushTime) >= flushIntervalMs;
+    return elapsed >= flushIntervalMs;
   }
   
   int getBufferCount() const {

@@ -136,7 +136,7 @@ private:
                 <input type="text" id="apSSID" placeholder="Access Point name">
                 
                 <label>AP Password:</label>
-                <input type="password" id="apPassword" placeholder="AP Password (min 8 characters)">
+                <input type="password" id="apPassword" placeholder="AP Password (min 8 characters)" minlength="8">
                 
                 <h3>Data Buffering (Optional)</h3>
                 <label>Enable Data Buffering:</label>
@@ -758,7 +758,10 @@ document.addEventListener('DOMContentLoaded', function() {
         strncpy(config->apSSID, doc["apSSID"], sizeof(config->apSSID) - 1);
       }
       if (doc.containsKey("apPassword") && strlen(doc["apPassword"]) > 0) {
-        strncpy(config->apPassword, doc["apPassword"], sizeof(config->apPassword) - 1);
+        const char* apPass = doc["apPassword"];
+        if (strlen(apPass) >= 8) {
+          strncpy(config->apPassword, apPass, sizeof(config->apPassword) - 1);
+        }
       }
       if (doc.containsKey("bufferingEnabled")) {
         config->bufferingEnabled = doc["bufferingEnabled"];
