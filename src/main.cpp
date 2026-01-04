@@ -97,7 +97,7 @@ void setup() {
   }
   
   // Start web server
-  webServer.begin(&deviceConfig, &sensorManager, &dataLogger);
+  webServer.begin(&deviceConfig, &sensorManager, &dataLogger, readBatteryVoltage);
   Serial.println("Web server started");
   
   Serial.println("Setup complete!");
@@ -223,6 +223,9 @@ void takeMeasurement() {
   // Read all sensors
   sensorManager.readAllSensors();
   
+  // Write header for new files
+  dataLogger.writeHeader(sensorManager.getCSVHeader());
+  
   // Log to SD card
   String logEntry = sensorManager.getCSVData(timestamp);
   if (dataLogger.logData(logEntry)) {
@@ -254,16 +257,15 @@ void enterDeepSleep() {
 
 float readBatteryVoltage() {
   // ESP32-S2 has ADC on GPIO1-10
-  // Using GPIO1 for battery voltage measurement with voltage divider
+  // Using configured GPIO for battery voltage measurement with voltage divider
   // Assuming 2:1 voltage divider (battery max 4.2V -> ADC max 2.1V)
   // ADC reads 0-4095 for 0-3.3V range
   
-  const int batteryPin = 1;
   const float adcMax = 4095.0;
   const float adcVoltage = 3.3;
   const float voltageDivider = 2.0;
   
-  int rawValue = analogRead(batteryPin);
+  int rawValue = analogRead(deviceConfig.batteryPin);
   float voltage = (rawValue / adcMax) * adcVoltage * voltageDivider;
   
   return voltage;

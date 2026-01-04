@@ -9,6 +9,7 @@
 #include <Arduino.h>
 #include <SD.h>
 #include <SPI.h>
+#include <WebServer.h>
 
 class DataLogger {
 public:
@@ -327,6 +328,19 @@ public:
     file.close();
     return true;
   }
+  
+  bool streamFile(const char* filename, WebServer& server) {
+    if (!initialized) return false;
+    
+    File file = SD.open(filename);
+    if (!file) {
+      return false;
+    }
+    
+    size_t sent = server.streamFile(file, "text/csv");
+    file.close();
+    return sent > 0;
+  }
 
 private:
   bool initialized;
@@ -367,6 +381,7 @@ private:
           }
         }
       }
+      file.close();  // Close before getting next!
       file = root.openNextFile();
     }
     

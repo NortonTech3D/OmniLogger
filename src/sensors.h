@@ -12,6 +12,7 @@
 #include <DHT.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <cmath>
 #include "config.h"
 
 // Sensor reading structure
@@ -25,9 +26,12 @@ struct SensorReading {
 
 class SensorManager {
 public:
-  SensorManager() : bme(nullptr), dht(nullptr), dallas(nullptr), oneWire(nullptr) {
+  SensorManager() : bme(nullptr) {
     for (int i = 0; i < Config::MAX_SENSORS; i++) {
       readings[i].valid = false;
+      dhtSensors[i] = nullptr;
+      dallasSensors[i] = nullptr;
+      oneWireSensors[i] = nullptr;
     }
   }
   
@@ -243,9 +247,9 @@ public:
 
 private:
   Adafruit_BME280* bme;
-  DHT* dht;
-  DallasTemperature* dallas;
-  OneWire* oneWire;
+  DHT* dhtSensors[Config::MAX_SENSORS];
+  DallasTemperature* dallasSensors[Config::MAX_SENSORS];
+  OneWire* oneWireSensors[Config::MAX_SENSORS];
   
   SensorReading readings[Config::MAX_SENSORS];
   SensorType sensorTypes[Config::MAX_SENSORS] = {SENSOR_NONE};
@@ -258,17 +262,19 @@ private:
       delete bme;
       bme = nullptr;
     }
-    if (dht) {
-      delete dht;
-      dht = nullptr;
-    }
-    if (dallas) {
-      delete dallas;
-      dallas = nullptr;
-    }
-    if (oneWire) {
-      delete oneWire;
-      oneWire = nullptr;
+    for (int i = 0; i < Config::MAX_SENSORS; i++) {
+      if (dhtSensors[i]) {
+        delete dhtSensors[i];
+        dhtSensors[i] = nullptr;
+      }
+      if (dallasSensors[i]) {
+        delete dallasSensors[i];
+        dallasSensors[i] = nullptr;
+      }
+      if (oneWireSensors[i]) {
+        delete oneWireSensors[i];
+        oneWireSensors[i] = nullptr;
+      }
     }
   }
   
@@ -281,12 +287,14 @@ private:
     
     if (bme->begin(0x76)) {
       sensorTypes[index] = SENSOR_BME280;
-      strcpy(sensorNames[index], config.name);
+      strncpy(sensorNames[index], config.name, sizeof(sensorNames[index]) - 1);
+      sensorNames[index][sizeof(sensorNames[index]) - 1] = '\0';
       sensorPins[index] = config.pin;
       Serial.println("BME280 initialized successfully");
     } else if (bme->begin(0x77)) {
       sensorTypes[index] = SENSOR_BME280;
-      strcpy(sensorNames[index], config.name);
+      strncpy(sensorNames[index], config.name, sizeof(sensorNames[index]) - 1);
+      sensorNames[index][sizeof(sensorNames[index]) - 1] = '\0';
       sensorPins[index] = config.pin;
       Serial.println("BME280 initialized successfully (alt address)");
     } else {
@@ -298,23 +306,25 @@ private:
   void initDHT22(int index, const SensorConfig& config) {
     Serial.printf("Initializing DHT22 sensor %d on pin %d...\n", index, config.pin);
     
-    dht = new DHT(config.pin, DHT22);
-    dht->begin();
+    dhtSensors[index] = new DHT(config.pin, DHT22);
+    dhtSensors[index]->begin();
     
     sensorTypes[index] = SENSOR_DHT22;
-    strcpy(sensorNames[index], config.name);
+    strncpy(sensorNames[index], config.name, sizeof(sensorNames[index]) - 1);
+    sensorNames[index][sizeof(sensorNames[index]) - 1] = '\0';
     sensorPins[index] = config.pin;
   }
   
   void initDS18B20(int index, const SensorConfig& config) {
     Serial.printf("Initializing DS18B20 sensor %d on pin %d...\n", index, config.pin);
     
-    oneWire = new OneWire(config.pin);
-    dallas = new DallasTemperature(oneWire);
-    dallas->begin();
+    oneWireSensors[index] = new OneWire(config.pin);
+    dallasSensors[index] = new DallasTemperature(oneWireSensors[index]);
+    dallasSensors[index]->begin();
     
     sensorTypes[index] = SENSOR_DS18B20;
-    strcpy(sensorNames[index], config.name);
+    strncpy(sensorNames[index], config.name, sizeof(sensorNames[index]) - 1);
+    sensorNames[index][sizeof(sensorNames[index]) - 1] = '\0';
     sensorPins[index] = config.pin;
   }
   
@@ -323,24 +333,31 @@ private:
     
     pinMode(config.pin, INPUT);
     sensorTypes[index] = SENSOR_ANALOG;
-    strcpy(sensorNames[index], config.name);
+    strncpy(sensorNames[index], config.name, sizeof(sensorNames[index]) - 1);
+    sensorNames[index][sizeof(sensorNames[index]) - 1] = '\0';
     sensorPins[index] = config.pin;
   }
   
   void readBME280(int index) {
     if (!bme) return;
     
-    readings[index].temperature = bme->readTemperature();
-    readings[index].humidity = bme->readHumidity();
-    readings[index].pressure = bme->readPressure() / 100.0F;
-    readings[index].valid = true;
+    float temp = bme->readTemperature();
+    float hum = bme->readHumidity();
+    float pres = bme->readPressure() / 100.0F;
+    
+    if (!isnan(temp) && !isnan(hum) && !isnan(pres)) {
+      readings[index].temperature = temp;
+      readings[index].humidity = hum;
+      readings[index].pressure = pres;
+      readings[index].valid = true;
+    }
   }
   
   void readDHT22(int index) {
-    if (!dht) return;
+    if (!dhtSensors[index]) return;
     
-    float temp = dht->readTemperature();
-    float hum = dht->readHumidity();
+    float temp = dhtSensors[index]->readTemperature();
+    float hum = dhtSensors[index]->readHumidity();
     
     if (!isnan(temp) && !isnan(hum)) {
       readings[index].temperature = temp;
@@ -350,10 +367,10 @@ private:
   }
   
   void readDS18B20(int index) {
-    if (!dallas) return;
+    if (!dallasSensors[index]) return;
     
-    dallas->requestTemperatures();
-    float temp = dallas->getTempCByIndex(0);
+    dallasSensors[index]->requestTemperatures();
+    float temp = dallasSensors[index]->getTempCByIndex(0);
     
     if (temp != DEVICE_DISCONNECTED_C) {
       readings[index].temperature = temp;

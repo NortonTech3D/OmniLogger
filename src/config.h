@@ -8,6 +8,7 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <algorithm>
 
 // Pin definitions for ESP32-S2 Mini
 #define DEFAULT_SD_CS 12
@@ -53,6 +54,7 @@ public:
   int sdCardCS;
   int i2cSDA;
   int i2cSCL;
+  int batteryPin;
   
   // Sensor configuration (support up to 8 sensors)
   static const int MAX_SENSORS = 8;
@@ -75,6 +77,7 @@ public:
     sdCardCS = DEFAULT_SD_CS;
     i2cSDA = DEFAULT_I2C_SDA;
     i2cSCL = DEFAULT_I2C_SCL;
+    batteryPin = 1;
     
     // Initialize sensors
     for (int i = 0; i < MAX_SENSORS; i++) {
@@ -88,7 +91,8 @@ public:
     sensors[0].type = SENSOR_BME280;
     sensors[0].pin = 0;  // I2C address index
     sensors[0].enabled = true;
-    strcpy(sensors[0].name, "Environment");
+    strncpy(sensors[0].name, "Environment", sizeof(sensors[0].name) - 1);
+    sensors[0].name[sizeof(sensors[0].name) - 1] = '\0';
   }
   
   bool begin() {
@@ -102,21 +106,28 @@ public:
     prefs.getString("apSSID", apSSID, sizeof(apSSID));
     prefs.getString("apPass", apPassword, sizeof(apPassword));
     
+    // Validate AP password length (WPA2 requires min 8 characters)
+    if (strlen(apPassword) < 8) {
+      strncpy(apPassword, "omnilogger123", sizeof(apPassword) - 1);
+      apPassword[sizeof(apPassword) - 1] = '\0';
+    }
+    
     // Load time settings
     timezoneOffset = prefs.getInt("tzOffset", 0);
     
     // Load measurement settings
-    measurementInterval = prefs.getUInt("measInterval", 60);
+    measurementInterval = std::max(1U, prefs.getUInt("measInterval", 60));
     deepSleepEnabled = prefs.getBool("deepSleep", false);
     
     // Load buffering settings
     bufferingEnabled = prefs.getBool("bufferEn", false);
-    flushInterval = prefs.getUInt("flushInt", 300);
+    flushInterval = std::max(1U, prefs.getUInt("flushInt", 300));
     
     // Load pin configuration
     sdCardCS = prefs.getInt("sdCS", DEFAULT_SD_CS);
     i2cSDA = prefs.getInt("i2cSDA", DEFAULT_I2C_SDA);
     i2cSCL = prefs.getInt("i2cSCL", DEFAULT_I2C_SCL);
+    batteryPin = prefs.getInt("batteryPin", 1);
     
     // Load sensor configuration
     for (int i = 0; i < MAX_SENSORS; i++) {
@@ -157,6 +168,7 @@ public:
     prefs.putInt("sdCS", sdCardCS);
     prefs.putInt("i2cSDA", i2cSDA);
     prefs.putInt("i2cSCL", i2cSCL);
+    prefs.putInt("batteryPin", batteryPin);
     
     // Save sensor configuration
     for (int i = 0; i < MAX_SENSORS; i++) {
