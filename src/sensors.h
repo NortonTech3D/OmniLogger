@@ -287,12 +287,14 @@ private:
     
     if (bme->begin(0x76)) {
       sensorTypes[index] = SENSOR_BME280;
-      strcpy(sensorNames[index], config.name);
+      strncpy(sensorNames[index], config.name, sizeof(sensorNames[index]) - 1);
+      sensorNames[index][sizeof(sensorNames[index]) - 1] = '\0';
       sensorPins[index] = config.pin;
       Serial.println("BME280 initialized successfully");
     } else if (bme->begin(0x77)) {
       sensorTypes[index] = SENSOR_BME280;
-      strcpy(sensorNames[index], config.name);
+      strncpy(sensorNames[index], config.name, sizeof(sensorNames[index]) - 1);
+      sensorNames[index][sizeof(sensorNames[index]) - 1] = '\0';
       sensorPins[index] = config.pin;
       Serial.println("BME280 initialized successfully (alt address)");
     } else {
@@ -308,7 +310,8 @@ private:
     dhtSensors[index]->begin();
     
     sensorTypes[index] = SENSOR_DHT22;
-    strcpy(sensorNames[index], config.name);
+    strncpy(sensorNames[index], config.name, sizeof(sensorNames[index]) - 1);
+    sensorNames[index][sizeof(sensorNames[index]) - 1] = '\0';
     sensorPins[index] = config.pin;
   }
   
@@ -320,7 +323,8 @@ private:
     dallasSensors[index]->begin();
     
     sensorTypes[index] = SENSOR_DS18B20;
-    strcpy(sensorNames[index], config.name);
+    strncpy(sensorNames[index], config.name, sizeof(sensorNames[index]) - 1);
+    sensorNames[index][sizeof(sensorNames[index]) - 1] = '\0';
     sensorPins[index] = config.pin;
   }
   
@@ -329,7 +333,8 @@ private:
     
     pinMode(config.pin, INPUT);
     sensorTypes[index] = SENSOR_ANALOG;
-    strcpy(sensorNames[index], config.name);
+    strncpy(sensorNames[index], config.name, sizeof(sensorNames[index]) - 1);
+    sensorNames[index][sizeof(sensorNames[index]) - 1] = '\0';
     sensorPins[index] = config.pin;
   }
   
