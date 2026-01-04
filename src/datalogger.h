@@ -25,13 +25,16 @@
 #include <SD.h>
 #include <SPI.h>
 #include <WebServer.h>
+#include <Preferences.h>
 
 class DataLogger {
 public:
   DataLogger() : initialized(false), fileOpen(false), totalDataPoints(0), 
-                 bufferEnabled(false), bufferCount(0), lastFlushTime(0) {
-    for (int i = 0; i < MAX_BUFFER_SIZE; i++) {
-      buffer[i] = "";
+                 bufferEnabled(false), bufferCount(0), lastFlushTime(0), sdInitialized(false) {
+    // Initialize NVS buffer
+    if (bufferPrefs.begin("databuffer", false)) {
+      bufferCount = bufferPrefs.getUInt("count", 0);
+      Serial.printf("Restored %d buffered entries from NVS\n", bufferCount);
     }
   }
   
@@ -39,18 +42,30 @@ public:
     this->csPin = csPin;
     lastFlushTime = millis();
     
+    // Don't initialize SD card here - lazy init when needed
+    Serial.println("DataLogger initialized (SD card will be initialized on first flush)");
+    initialized = true;
+    
+    return true;
+  }
+  
+  bool initSDCard() {
+    if (sdInitialized) {
+      return true;
+    }
+    
     Serial.println("Initializing SD card...");
     
     if (!SD.begin(csPin)) {
       Serial.println("SD card initialization failed!");
-      initialized = false;
+      sdInitialized = false;
       return false;
     }
     
     uint8_t cardType = SD.cardType();
     if (cardType == CARD_NONE) {
       Serial.println("No SD card attached!");
-      initialized = false;
+      sdInitialized = false;
       return false;
     }
     
@@ -72,7 +87,7 @@ public:
     uint64_t cardSize = SD.cardSize() / (1024 * 1024);
     Serial.printf("SD Card Size: %lluMB\n", cardSize);
     
-    initialized = true;
+    sdInitialized = true;
     
     // Count existing data points
     countDataPoints();
@@ -82,21 +97,41 @@ public:
   
   bool logData(const String& data) {
     if (!initialized && !bufferEnabled) {
-      Serial.println("SD card not initialized and buffering disabled!");
+      Serial.println("DataLogger not initialized and buffering disabled!");
       return false;
     }
     
-    // If buffering is enabled, add to buffer
+    // If buffering is enabled, add to NVS buffer
     if (bufferEnabled) {
       if (bufferCount < MAX_BUFFER_SIZE) {
-        buffer[bufferCount++] = data;
-        Serial.printf("Data buffered (count: %d/%d)\n", bufferCount, MAX_BUFFER_SIZE);
+        // Store data point in NVS
+        char key[16];
+        snprintf(key, sizeof(key), "d%d", bufferCount);
+        bufferPrefs.putString(key, data);
+        bufferCount++;
+        bufferPrefs.putUInt("count", bufferCount);
+        
+        Serial.printf("Data buffered to NVS (count: %d/%d)\n", bufferCount, MAX_BUFFER_SIZE);
+        
+        // Check if buffer threshold reached (80% full)
+        if (bufferCount >= (MAX_BUFFER_SIZE * 80 / 100)) {
+          Serial.println("Buffer 80% full, triggering flush...");
+          flushBuffer();
+        }
+        
         return true;
       } else {
         // Buffer full, force flush then add current data
         Serial.println("Buffer full, forcing flush...");
         flushBuffer();
-        buffer[bufferCount++] = data;
+        
+        // Store current data point
+        char key[16];
+        snprintf(key, sizeof(key), "d%d", bufferCount);
+        bufferPrefs.putString(key, data);
+        bufferCount++;
+        bufferPrefs.putUInt("count", bufferCount);
+        
         return true;
       }
     }
@@ -106,8 +141,9 @@ public:
   }
   
   bool writeToSD(const String& data) {
-    if (!initialized) {
-      Serial.println("SD card not initialized!");
+    // Lazy init SD card on first write
+    if (!sdInitialized && !initSDCard()) {
+      Serial.println("SD card not initialized and init failed!");
       return false;
     }
     
@@ -146,7 +182,10 @@ public:
   }
   
   bool writeHeader(const String& header) {
-    if (!initialized) return false;
+    // Lazy init SD card
+    if (!sdInitialized && !initSDCard()) {
+      return false;
+    }
     
     time_t now;
     time(&now);
@@ -186,8 +225,9 @@ public:
   }
   
   bool flushBuffer() {
-    if (!initialized) {
-      Serial.println("Cannot flush buffer - SD card not initialized!");
+    // Lazy init SD card on flush
+    if (!sdInitialized && !initSDCard()) {
+      Serial.println("Cannot flush buffer - SD card init failed!");
       return false;
     }
     
@@ -195,18 +235,32 @@ public:
       return true;  // Nothing to flush
     }
     
-    Serial.printf("Flushing %d buffered data points to SD card...\n", bufferCount);
+    Serial.printf("Flushing %d buffered data points from NVS to SD card...\n", bufferCount);
     
     int successCount = 0;
     int totalCount = bufferCount;
+    
+    // Read buffered data from NVS and write to SD
     for (int i = 0; i < totalCount; i++) {
-      if (writeToSD(buffer[i])) {
-        successCount++;
+      char key[16];
+      snprintf(key, sizeof(key), "d%d", i);
+      String data = bufferPrefs.getString(key, "");
+      
+      if (data.length() > 0) {
+        if (writeToSD(data)) {
+          successCount++;
+        }
       }
     }
     
-    // Clear buffer
+    // Clear NVS buffer
+    for (int i = 0; i < totalCount; i++) {
+      char key[16];
+      snprintf(key, sizeof(key), "d%d", i);
+      bufferPrefs.remove(key);
+    }
     bufferCount = 0;
+    bufferPrefs.putUInt("count", 0);
     lastFlushTime = millis();
     
     Serial.printf("Flushed %d/%d data points successfully\n", successCount, totalCount);
@@ -241,17 +295,17 @@ public:
   }
   
   uint64_t getTotalSize() const {
-    if (!initialized) return 0;
+    if (!sdInitialized) return 0;
     return SD.cardSize();
   }
   
   uint64_t getUsedSize() const {
-    if (!initialized) return 0;
+    if (!sdInitialized) return 0;
     return SD.usedBytes();
   }
   
   uint64_t getFreeSize() const {
-    if (!initialized) return 0;
+    if (!sdInitialized) return 0;
     return SD.totalBytes() - SD.usedBytes();
   }
   
@@ -260,7 +314,7 @@ public:
   }
   
   bool isHealthy() const {
-    if (!initialized) return false;
+    if (!sdInitialized) return false;
     
     // Basic health check - can we write a test file?
     File testFile = SD.open("/health_check.tmp", FILE_WRITE);
@@ -275,7 +329,7 @@ public:
   }
   
   String getCardInfo() const {
-    if (!initialized) return "Not initialized";
+    if (!sdInitialized) return "Not initialized";
     
     String info = "";
     uint8_t cardType = SD.cardType();
@@ -302,7 +356,7 @@ public:
   }
   
   bool listFiles(String& output, const char* dirname = "/") {
-    if (!initialized) return false;
+    if (!sdInitialized) return false;
     
     File root = SD.open(dirname);
     if (!root) {
@@ -328,7 +382,7 @@ public:
   }
   
   bool downloadFile(const char* filename, String& content) {
-    if (!initialized) return false;
+    if (!sdInitialized) return false;
     
     File file = SD.open(filename);
     if (!file) {
@@ -345,7 +399,7 @@ public:
   }
   
   bool streamFile(const char* filename, WebServer& server) {
-    if (!initialized) return false;
+    if (!sdInitialized) return false;
     
     File file = SD.open(filename);
     if (!file) {
@@ -362,10 +416,11 @@ private:
   bool fileOpen;
   int csPin;
   uint32_t totalDataPoints;
+  bool sdInitialized;
   
-  // Data buffering
+  // Data buffering with NVS persistence
   static const int MAX_BUFFER_SIZE = 100;  // Buffer up to 100 data points
-  String buffer[MAX_BUFFER_SIZE];
+  Preferences bufferPrefs;  // NVS storage for buffer
   int bufferCount;
   bool bufferEnabled;
   unsigned long lastFlushTime;

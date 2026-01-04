@@ -52,12 +52,30 @@ unsigned long bootTime = 0;
 uint32_t measurementCount = 0;
 bool timeInitialized = false;
 
+// Measurement count persistence
+Preferences measurementPrefs;
+
+// WiFi management
+bool wifiEnabled = true;
+unsigned long wifiTimeoutStart = 0;
+const unsigned long WIFI_TIMEOUT_MS = 180000;  // 3 minutes
+volatile bool wifiReenableRequested = false;
+
 // Forward declarations
 void setupWiFi();
 void syncTime();
 void takeMeasurement();
 void enterDeepSleep();
 float readBatteryVoltage();
+void checkWiFiTimeout();
+void disableWiFi();
+void enableWiFi();
+void IRAM_ATTR wifiButtonISR();
+
+// WiFi status getter for web interface
+bool getWiFiEnabled() {
+  return wifiEnabled;
+}
 
 void setup() {
   Serial.begin(115200);
@@ -68,6 +86,12 @@ void setup() {
   Serial.println("========================================");
   
   bootTime = millis();
+  
+  // Initialize measurement count from NVS
+  if (measurementPrefs.begin("measurements", false)) {
+    measurementCount = measurementPrefs.getUInt("count", 0);
+    Serial.printf("Restored measurement count: %d\n", measurementCount);
+  }
   
   // Initialize configuration
   if (!deviceConfig.begin()) {
@@ -83,14 +107,14 @@ void setup() {
     Serial.println("LittleFS mounted successfully");
   }
   
-  // Initialize SD card
+  // Initialize DataLogger (SD card will be lazy-initialized on first flush)
   pinMode(deviceConfig.sdCardCS, OUTPUT);
   digitalWrite(deviceConfig.sdCardCS, HIGH);
   
   if (!dataLogger.begin(deviceConfig.sdCardCS)) {
-    Serial.println("WARNING: SD card initialization failed!");
+    Serial.println("WARNING: DataLogger initialization failed!");
   } else {
-    Serial.println("SD card initialized successfully");
+    Serial.println("DataLogger initialized successfully");
   }
   
   // Configure data buffering
@@ -106,13 +130,21 @@ void setup() {
   // Setup WiFi
   setupWiFi();
   
+  // Setup GPIO 0 button for WiFi re-enable
+  pinMode(0, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(0), wifiButtonISR, FALLING);
+  Serial.println("GPIO 0 button configured for WiFi re-enable");
+  
+  // Start WiFi timeout timer
+  wifiTimeoutStart = millis();
+  
   // Sync time from NTP
   if (WiFi.status() == WL_CONNECTED) {
     syncTime();
   }
   
   // Start web server
-  webServer.begin(&deviceConfig, &sensorManager, &dataLogger, readBatteryVoltage);
+  webServer.begin(&deviceConfig, &sensorManager, &dataLogger, readBatteryVoltage, getWiFiEnabled);
   Serial.println("Web server started");
   
   Serial.println("Setup complete!");
@@ -120,8 +152,17 @@ void setup() {
 }
 
 void loop() {
-  // Handle web server
-  webServer.handleClient();
+  // Check for WiFi re-enable request from button
+  if (wifiReenableRequested) {
+    wifiReenableRequested = false;
+    enableWiFi();
+  }
+  
+  // Handle web server if WiFi is enabled
+  if (wifiEnabled) {
+    webServer.handleClient();
+    checkWiFiTimeout();
+  }
   
   // Check if buffered data should be flushed
   if (deviceConfig.bufferingEnabled && 
@@ -144,7 +185,7 @@ void loop() {
   
   // Resync time periodically (every 12 hours)
   static unsigned long lastTimeSync = 0;
-  if (timeInitialized && millis() - lastTimeSync > 12 * 60 * 60 * 1000UL) {
+  if (timeInitialized && wifiEnabled && millis() - lastTimeSync > 12 * 60 * 60 * 1000UL) {
     syncTime();
     lastTimeSync = millis();
   }
@@ -245,6 +286,7 @@ void takeMeasurement() {
   String logEntry = sensorManager.getCSVData(timestamp);
   if (dataLogger.logData(logEntry)) {
     measurementCount++;
+    measurementPrefs.putUInt("count", measurementCount);
     Serial.printf("Data logged successfully (count: %d)\n", measurementCount);
   } else {
     Serial.println("Failed to log data");
@@ -260,8 +302,8 @@ void takeMeasurement() {
 void enterDeepSleep() {
   Serial.printf("Entering deep sleep for %d seconds...\n", deviceConfig.measurementInterval);
   
-  // Close files and cleanup
-  dataLogger.flush();
+  // Do NOT flush buffer - it persists in NVS across deep sleep
+  // Buffer will be flushed when threshold is reached or manually triggered
   
   // Configure wake up
   esp_sleep_enable_timer_wakeup(deviceConfig.measurementInterval * 1000000ULL);
@@ -299,4 +341,90 @@ float readBatteryVoltage() {
   // Sanity check: typical LiPo range is 2.5V - 4.2V, with divider we see 5.0V - 8.4V
   // If reading seems wrong, it might be USB powered (showing ~5V from USB)
   return voltage;
+}
+
+void checkWiFiTimeout() {
+  if (!wifiEnabled) return;
+  
+  unsigned long currentTime = millis();
+  unsigned long elapsed;
+  
+  // Handle millis() rollover
+  if (currentTime >= wifiTimeoutStart) {
+    elapsed = currentTime - wifiTimeoutStart;
+  } else {
+    elapsed = (0xFFFFFFFF - wifiTimeoutStart) + currentTime + 1;
+  }
+  
+  // Check timeout
+  if (elapsed >= WIFI_TIMEOUT_MS) {
+    // Check if we have clients or connection
+    bool hasActivity = false;
+    
+    if (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA) {
+      // AP mode - check for connected clients
+      if (WiFi.softAPgetStationNum() > 0) {
+        hasActivity = true;
+        wifiTimeoutStart = currentTime;  // Reset timer
+      }
+    }
+    
+    if (WiFi.getMode() == WIFI_STA || WiFi.getMode() == WIFI_AP_STA) {
+      // STA mode - check for connection
+      if (WiFi.status() == WL_CONNECTED) {
+        hasActivity = true;
+        wifiTimeoutStart = currentTime;  // Reset timer
+      }
+    }
+    
+    // If no activity after timeout, disable WiFi
+    if (!hasActivity) {
+      Serial.println("WiFi timeout reached with no activity - disabling WiFi");
+      disableWiFi();
+    }
+  }
+}
+
+void disableWiFi() {
+  if (!wifiEnabled) return;
+  
+  Serial.println("Disabling WiFi and web server to save power...");
+  
+  // Stop web server (there's no explicit stop method, but disconnecting WiFi will stop requests)
+  
+  // Disconnect and disable WiFi
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+  
+  wifiEnabled = false;
+  
+  Serial.println("WiFi disabled. Press GPIO 0 button to re-enable.");
+}
+
+void enableWiFi() {
+  if (wifiEnabled) return;
+  
+  Serial.println("Re-enabling WiFi...");
+  
+  // Restart WiFi setup
+  setupWiFi();
+  
+  // Restart web server
+  webServer.begin(&deviceConfig, &sensorManager, &dataLogger, readBatteryVoltage, getWiFiEnabled);
+  
+  // Reset timeout timer
+  wifiTimeoutStart = millis();
+  wifiEnabled = true;
+  
+  // Sync time if connected
+  if (WiFi.status() == WL_CONNECTED) {
+    syncTime();
+  }
+  
+  Serial.println("WiFi re-enabled successfully");
+}
+
+void IRAM_ATTR wifiButtonISR() {
+  // Set flag to re-enable WiFi in main loop (can't do WiFi operations in ISR)
+  wifiReenableRequested = true;
 }

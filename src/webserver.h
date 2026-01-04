@@ -30,13 +30,16 @@
 
 class WebServerManager {
 public:
-  WebServerManager() : server(80), config(nullptr), sensors(nullptr), logger(nullptr), getBatteryVoltage(nullptr) {}
+  WebServerManager() : server(80), config(nullptr), sensors(nullptr), logger(nullptr), 
+                       getBatteryVoltage(nullptr), getWiFiEnabled(nullptr) {}
   
-  void begin(Config* cfg, SensorManager* sens, DataLogger* log, float (*batteryVoltageFn)() = nullptr) {
+  void begin(Config* cfg, SensorManager* sens, DataLogger* log, 
+             float (*batteryVoltageFn)() = nullptr, bool (*wifiEnabledFn)() = nullptr) {
     config = cfg;
     sensors = sens;
     logger = log;
     getBatteryVoltage = batteryVoltageFn;
+    getWiFiEnabled = wifiEnabledFn;
     
     // Setup routes
     server.on("/", HTTP_GET, [this]() { handleRoot(); });
@@ -48,6 +51,7 @@ public:
     server.on("/api/data", HTTP_GET, [this]() { handleGetData(); });
     server.on("/api/files", HTTP_GET, [this]() { handleListFiles(); });
     server.on("/api/download", HTTP_GET, [this]() { handleDownload(); });
+    server.on("/api/flush", HTTP_POST, [this]() { handleFlushBuffer(); });
     server.on("/style.css", HTTP_GET, [this]() { handleCSS(); });
     server.on("/script.js", HTTP_GET, [this]() { handleJS(); });
     server.onNotFound([this]() { handleNotFound(); });
@@ -66,6 +70,7 @@ private:
   SensorManager* sensors;
   DataLogger* logger;
   float (*getBatteryVoltage)();
+  bool (*getWiFiEnabled)();
   
   void handleRoot() {
     String html = R"rawliteral(<!DOCTYPE html>
@@ -121,6 +126,14 @@ private:
                     <h3>Buffer Status</h3>
                     <p class="stat-value" id="buffer">-</p>
                 </div>
+                <div class="stat-card">
+                    <h3>WiFi Status</h3>
+                    <p class="stat-value" id="wifistatus">-</p>
+                </div>
+            </div>
+            
+            <div style="margin: 20px 0;">
+                <button onclick="flushBuffer()" class="btn-primary">Flush Buffer to SD Card</button>
             </div>
             
             <h3>Current Readings</h3>
@@ -461,6 +474,7 @@ function loadStatus() {
             document.getElementById('sensorcount').textContent = data.sensorCount;
             document.getElementById('uptime').textContent = formatUptime(data.uptime);
             document.getElementById('buffer').textContent = data.bufferCount + ' / ' + data.bufferCapacity;
+            document.getElementById('wifistatus').textContent = data.wifiEnabled ? '✓ Enabled' : '✗ Disabled';
             
             // Update readings
             let readingsHTML = '';
@@ -612,6 +626,24 @@ function downloadFile(filename) {
     window.open('/api/download?file=' + encodeURIComponent(filename), '_blank');
 }
 
+function flushBuffer() {
+    if (!confirm('Flush buffered data to SD card now?')) {
+        return;
+    }
+    
+    fetch('/api/flush', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert(data.message || 'Buffer flushed successfully');
+        loadStatus();  // Refresh status to show updated buffer count
+    })
+    .catch(err => {
+        alert('Error flushing buffer: ' + err);
+    });
+}
+
 function formatUptime(seconds) {
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
@@ -650,6 +682,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Buffer stats
     doc["bufferCount"] = logger->getBufferCount();
     doc["bufferCapacity"] = logger->getBufferCapacity();
+    
+    // WiFi status
+    doc["wifiEnabled"] = getWiFiEnabled ? getWiFiEnabled() : true;
     
     // Current sensor readings
     JsonArray readings = doc.createNestedArray("readings");
@@ -1066,6 +1101,30 @@ document.addEventListener('DOMContentLoaded', function() {
     } else {
       server.send(400, "text/plain", "Missing file parameter");
     }
+  }
+  
+  void handleFlushBuffer() {
+    DynamicJsonDocument doc(256);
+    
+    int bufferCount = logger->getBufferCount();
+    
+    if (bufferCount == 0) {
+      doc["message"] = "Buffer is empty - nothing to flush";
+      doc["success"] = true;
+    } else {
+      bool success = logger->flushBuffer();
+      if (success) {
+        doc["message"] = String("Successfully flushed ") + String(bufferCount) + " data points to SD card";
+        doc["success"] = true;
+      } else {
+        doc["message"] = "Failed to flush buffer - check SD card";
+        doc["success"] = false;
+      }
+    }
+    
+    String response;
+    serializeJson(doc, response);
+    server.send(200, "application/json", response);
   }
   
   void handleNotFound() {
