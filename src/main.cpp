@@ -280,8 +280,23 @@ float readBatteryVoltage() {
   const float adcVoltage = 3.3;
   const float voltageDivider = 2.0;
   
+  // Validate battery pin is configured
+  if (deviceConfig.batteryPin < 0 || deviceConfig.batteryPin > 10) {
+    Serial.println("Warning: Invalid battery pin configured");
+    return 0.0;
+  }
+  
   int rawValue = analogRead(deviceConfig.batteryPin);
+  
+  // Validate ADC reading
+  if (rawValue < 0 || rawValue > 4095) {
+    Serial.printf("Warning: Invalid ADC reading: %d\n", rawValue);
+    return 0.0;
+  }
+  
   float voltage = (rawValue / adcMax) * adcVoltage * voltageDivider;
   
+  // Sanity check: typical LiPo range is 2.5V - 4.2V, with divider we see 5.0V - 8.4V
+  // If reading seems wrong, it might be USB powered (showing ~5V from USB)
   return voltage;
 }

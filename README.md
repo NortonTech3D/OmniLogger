@@ -1,6 +1,8 @@
 # OmniLogger
 
-A semi-universal data logger system using the Lolin (WEMOS) ESP-32 S2 Mini as the backbone.
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+
+A semi-universal data logger system using the Lolin (WEMOS) ESP-32 S2 Mini as the backbone. Production-ready firmware for environmental monitoring, sensor data collection, and IoT applications.
 
 ## Features
 
@@ -284,6 +286,33 @@ The CSV header is dynamically generated based on configured sensors.
   - Deep sleep (1 measurement/minute): Several days to weeks
   - Deep sleep (1 measurement/5 minutes): Weeks to months
 
+## Security Considerations
+
+OmniLogger includes several security features to protect your data and device:
+
+### Built-in Security Features
+- **Input Validation**: All user inputs are validated before processing
+- **Path Traversal Protection**: File download requests are checked to prevent unauthorized access
+- **JSON Validation**: API endpoints validate JSON structure before parsing
+- **Bounds Checking**: Array accesses and sensor readings are validated
+- **Password Requirements**: AP passwords must be 8+ characters (WPA2 requirement)
+- **Safe String Handling**: All string operations use bounded functions to prevent overflows
+
+### Best Practices for Deployment
+1. **Change Default AP Password**: The default AP password is "omnilogger123" - change this immediately
+2. **Use Strong WiFi Credentials**: If connecting to WiFi, use a strong password
+3. **Network Security**: Consider using a separate network/VLAN for IoT devices
+4. **Physical Security**: Protect the device physically as it stores WiFi credentials
+5. **Regular Updates**: Keep the firmware updated for security patches
+6. **Data Privacy**: Sensor data is stored locally on the SD card - secure it appropriately
+
+### Limitations
+- **No Encryption**: Web interface traffic is not encrypted (HTTP, not HTTPS)
+- **No Authentication**: Web interface does not require login (suitable for local/trusted networks)
+- **WiFi Credentials**: Stored in plaintext in ESP32 flash memory
+
+**Recommendation**: Deploy OmniLogger on trusted networks only, or implement additional network-level security measures.
+
 ## Troubleshooting
 
 ### SD Card Not Detected
@@ -340,11 +369,11 @@ To add a new sensor type:
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the GNU Affero General Public License v3.0 - see the LICENSE file for details.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please feel free to submit a Pull Request. See CONTRIBUTING.md for detailed guidelines.
 
 ## Support
 
@@ -355,3 +384,9 @@ For issues, questions, or suggestions, please open an issue on the GitHub reposi
 - Built for the Lolin (WEMOS) ESP32-S2 Mini
 - Uses Arduino framework and PlatformIO
 - Libraries from Adafruit and community contributors
+
+## Repository
+
+- **GitHub**: https://github.com/NortonTech3D/OmniLogger
+- **Documentation**: See QUICKSTART.md, CONTRIBUTING.md, and TROUBLESHOOTING.md
+- **Examples**: See examples/ directory for wiring diagrams and configurations
