@@ -8,6 +8,7 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <algorithm>
 
 // Pin definitions for ESP32-S2 Mini
 #define DEFAULT_SD_CS 12
@@ -107,7 +108,8 @@ public:
     
     // Validate AP password length (WPA2 requires min 8 characters)
     if (strlen(apPassword) < 8) {
-      strcpy(apPassword, "omnilogger123");  // Reset to default if too short
+      strncpy(apPassword, "omnilogger123", sizeof(apPassword) - 1);
+      apPassword[sizeof(apPassword) - 1] = '\0';
     }
     
     // Load time settings

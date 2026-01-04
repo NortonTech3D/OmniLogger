@@ -9,6 +9,7 @@
 #include <Arduino.h>
 #include <SD.h>
 #include <SPI.h>
+#include <WebServer.h>
 
 class DataLogger {
 public:
