@@ -337,9 +337,9 @@ public:
       return false;
     }
     
-    server.streamFile(file, "text/csv");
+    size_t sent = server.streamFile(file, "text/csv");
     file.close();
-    return true;
+    return sent > 0;
   }
 
 private:
