@@ -234,28 +234,29 @@ For portable operation with battery voltage monitoring.
 
 ### Connections:
 
-| Battery | Component | ESP32-S2 Pin |
-|---------|-----------|-------------|
-| Battery + | ─── 10kΩ ───┬─── | GPIO 1 (ADC) |
-| | | ├─── 10kΩ ─── | GND |
-| Battery - | | GND |
-| Battery + (power) | | 5V or 3V3 via regulator |
+| Battery Terminal | Voltage Divider Component | ESP32-S2 Pin |
+|-----------------|---------------------------|--------------|
+| Battery +       | → 100kΩ → Junction →     | GPIO 1 (ADC) |
+|                 | → Junction → 100kΩ →      | GND          |
+| Battery -       |                           | GND          |
+| Battery + (power)|                          | 5V or 3V3 via regulator |
 
 ### Voltage Divider Circuit:
 ```
 Battery + (3.7V - 4.2V for LiPo)
     │
-    ├─── 10kΩ ────┬──── GPIO 1 (ADC)
-    │             │
-    │             ├─── 10kΩ ─── GND
+    ├──── [LiPo Charger/Protection] ──── ESP32-S2 5V or 3V3
     │
-    └──── [LiPo Charger/Protection] ──── ESP32-S2 5V or 3V3
+    └─── 100kΩ ────┬──── GPIO 1 (ADC)
+                   │
+                   └─── 100kΩ ─── GND
 ```
 
 ### Notes:
 - 2:1 voltage divider reduces battery voltage to safe ADC range
 - 4.2V (max LiPo) → 2.1V at ADC (safe)
 - Software calculates actual battery voltage
+- **100kΩ resistors used for power efficiency**: Only ~40µA current draw vs ~400µA with 10kΩ
 - Add LiPo charger/protection board for safety
 - ESP32-S2 can be powered via:
   - USB (5V)
@@ -301,9 +302,9 @@ Battery + (3.7V - 4.2V for LiPo)
     └──────────────┘        │                         │
                             │                         │
     Battery Monitoring      │                         │
-    Battery + ─── 10kΩ ──────── GPIO 1              │
+    Battery + ─── 100kΩ ─────── GPIO 1              │
                     │       │                         │
-                    10kΩ    │                         │
+                    100kΩ   │                         │
                     │       │                         │
                    GND ────────── GND                 │
                             │                         │
@@ -410,7 +411,7 @@ Analog:
 - At least one sensor (BME280 recommended)
 
 ### Recommended Additional Parts:
-- Assorted resistors (4.7kΩ, 10kΩ)
+- Assorted resistors (4.7kΩ for pull-ups, 100kΩ for battery divider)
 - Capacitors (0.1µF)
 - LiPo battery (2000mAh recommended)
 - TP4056 charger module

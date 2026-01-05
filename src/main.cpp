@@ -338,7 +338,8 @@ float readBatteryVoltage() {
   
   float voltage = (rawValue / adcMax) * adcVoltage * voltageDivider;
   
-  // Sanity check: typical LiPo range is 2.5V - 4.2V, with divider we see 5.0V - 8.4V
+  // Sanity check: typical LiPo range is 2.5V - 4.2V, with 2:1 divider ADC sees 1.25V - 2.1V
+  // Code multiplies by 2 to calculate actual battery voltage (2.5V - 4.2V)
   // If reading seems wrong, it might be USB powered (showing ~5V from USB)
   return voltage;
 }

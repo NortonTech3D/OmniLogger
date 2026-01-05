@@ -598,7 +598,7 @@ Before diving into specific problems, check these basics:
 **Solutions:**
 
 1. **Check voltage divider**
-   - Verify 10kΩ resistors installed
+   - Verify 100kΩ resistors installed
    - Check connections to GPIO 1
    - Verify resistor values with multimeter
 
