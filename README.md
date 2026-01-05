@@ -102,8 +102,8 @@ ESP32-S2 Mini                DS18B20
     GND -------------------- GND
     GPIO [configurable] ---- DATA (with 4.7kΩ pull-up resistor)
 
-Battery Voltage Monitoring (2:1 voltage divider):
-    Battery+ --- [10kΩ] --- GPIO 1 --- [10kΩ] --- GND
+Battery Voltage Monitoring (2:1 voltage divider with 100kΩ resistors for low power):
+    Battery+ --- [100kΩ] --- GPIO 1 --- [100kΩ] --- GND
 ```
 
 ## Software Setup
