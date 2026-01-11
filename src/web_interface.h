@@ -18,8 +18,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef WEBSERVER_H
-#define WEBSERVER_H
+#ifndef WEB_INTERFACE_H
+#define WEB_INTERFACE_H
 
 #include <Arduino.h>
 #include <WebServer.h>
@@ -27,6 +27,34 @@
 #include "config.h"
 #include "sensors.h"
 #include "datalogger.h"
+
+// Custom allocator that uses PSRAM when available for large allocations
+struct PsramAllocator {
+  void* allocate(size_t size) {
+    if (psramFound() && size > 512) {
+      // Use PSRAM for larger allocations
+      void* ptr = ps_malloc(size);
+      if (ptr) return ptr;
+    }
+    // Fallback to regular heap
+    return malloc(size);
+  }
+  
+  void deallocate(void* ptr) {
+    free(ptr);  // free() works for both heap and PSRAM
+  }
+  
+  void* reallocate(void* ptr, size_t new_size) {
+    if (psramFound() && new_size > 512) {
+      void* new_ptr = ps_realloc(ptr, new_size);
+      if (new_ptr) return new_ptr;
+    }
+    return realloc(ptr, new_size);
+  }
+};
+
+// JSON document type that uses PSRAM for large documents
+using PsramJsonDocument = BasicJsonDocument<PsramAllocator>;
 
 class WebServerManager {
 public:
@@ -668,7 +696,8 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   
   void handleStatus() {
-    DynamicJsonDocument doc(2048);
+    // Use PSRAM-backed JSON document for larger allocations
+    PsramJsonDocument doc(2048);
     
     // System stats
     doc["datapoints"] = logger->getDataPointCount();
@@ -727,7 +756,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   
   void handleGetSensors() {
-    DynamicJsonDocument doc(2048);
+    PsramJsonDocument doc(2048);
     JsonArray sensorsArray = doc.createNestedArray("sensors");
     
     for (int i = 0; i < Config::MAX_SENSORS; i++) {
@@ -745,7 +774,7 @@ document.addEventListener('DOMContentLoaded', function() {
   
   void handleSetSensors() {
     if (server.hasArg("plain")) {
-      DynamicJsonDocument doc(2048);
+      PsramJsonDocument doc(2048);
       DeserializationError error = deserializeJson(doc, server.arg("plain"));
       
       if (error) {
@@ -792,7 +821,7 @@ document.addEventListener('DOMContentLoaded', function() {
       
       config->save();
       
-      DynamicJsonDocument response(256);
+      PsramJsonDocument response(256);
       response["success"] = true;
       response["message"] = "Sensor configuration saved! Please reboot for changes to take effect.";
       
@@ -805,7 +834,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   
   void handleGetSettings() {
-    DynamicJsonDocument doc(512);
+    PsramJsonDocument doc(512);
     
     doc["wifiSSID"] = config->wifiSSID;
     doc["apSSID"] = config->apSSID;
@@ -823,7 +852,7 @@ document.addEventListener('DOMContentLoaded', function() {
   
   void handleSetSettings() {
     if (server.hasArg("plain")) {
-      DynamicJsonDocument doc(512);
+      PsramJsonDocument doc(512);
       DeserializationError error = deserializeJson(doc, server.arg("plain"));
       
       if (error) {
@@ -910,7 +939,7 @@ document.addEventListener('DOMContentLoaded', function() {
       
       config->save();
       
-      DynamicJsonDocument response(256);
+      PsramJsonDocument response(256);
       response["success"] = true;
       response["message"] = "Settings saved successfully!";
       
@@ -955,8 +984,11 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Calculate JSON document size based on limit
     // Each line might have ~200 bytes in JSON, plus overhead
-    size_t docSize = std::min((size_t)16384, (size_t)(limit * 250 + 512));
-    DynamicJsonDocument doc(docSize);
+    // With PSRAM, we can handle much larger documents safely
+    size_t docSize = psramFound() 
+        ? std::min((size_t)65536, (size_t)(limit * 250 + 512))  // Up to 64KB with PSRAM
+        : std::min((size_t)16384, (size_t)(limit * 250 + 512)); // 16KB without PSRAM
+    PsramJsonDocument doc(docSize);
     JsonArray dataArray = doc.createNestedArray("data");
     
     // Open file for reading
@@ -1051,7 +1083,7 @@ document.addEventListener('DOMContentLoaded', function() {
     String fileList;
     logger->listFiles(fileList);
     
-    DynamicJsonDocument doc(2048);
+    PsramJsonDocument doc(2048);
     JsonArray filesArray = doc.createNestedArray("files");
     
     // Parse file list
@@ -1104,7 +1136,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   
   void handleFlushBuffer() {
-    DynamicJsonDocument doc(256);
+    PsramJsonDocument doc(256);
     
     int bufferCount = logger->getBufferCount();
     
@@ -1132,4 +1164,4 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 };
 
-#endif // WEBSERVER_H
+#endif // WEB_INTERFACE_H

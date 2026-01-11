@@ -41,7 +41,7 @@ struct SensorReading {
 
 class SensorManager {
 public:
-  SensorManager() : sensorCount(0) {
+  SensorManager() : sensorCount(0), i2cInitialized(false) {
     for (int i = 0; i < Config::MAX_SENSORS; i++) {
       readings[i].valid = false;
       dhtSensors[i] = nullptr;
@@ -68,8 +68,13 @@ public:
     }
     
     if (i2cNeeded) {
-      Wire.begin(config.i2cSDA, config.i2cSCL);
-      Serial.printf("I2C initialized on SDA:%d, SCL:%d\n", config.i2cSDA, config.i2cSCL);
+      if (!i2cInitialized) {
+        Wire.begin(config.i2cSDA, config.i2cSCL);
+        i2cInitialized = true;
+        Serial.printf("I2C initialized on SDA:%d, SCL:%d\n", config.i2cSDA, config.i2cSCL);
+      }
+      // Try to recover I2C bus if stuck (clock out any stuck slaves)
+      recoverI2CBus(config.i2cSDA, config.i2cSCL);
     }
     
     // Initialize each sensor
@@ -181,7 +186,10 @@ public:
   }
   
   String getCSVData(const char* timestamp) const {
-    String csv = timestamp;
+    // Pre-allocate string buffer to reduce memory fragmentation
+    String csv;
+    csv.reserve(256);  // Reserve reasonable size upfront
+    csv = timestamp;
     
     for (int i = 0; i < Config::MAX_SENSORS; i++) {
       if (sensorTypes[i] == SENSOR_NONE) continue;
@@ -204,21 +212,25 @@ public:
             break;
         }
       } else {
+        char buffer[32];
         switch (sensorTypes[i]) {
           case SENSOR_BME280:
-            csv += "," + String(readings[i].temperature, 2);
-            csv += "," + String(readings[i].humidity, 2);
-            csv += "," + String(readings[i].pressure, 2);
+            snprintf(buffer, sizeof(buffer), ",%.2f,%.2f,%.2f", 
+                    readings[i].temperature, readings[i].humidity, readings[i].pressure);
+            csv += buffer;
             break;
           case SENSOR_DHT22:
-            csv += "," + String(readings[i].temperature, 2);
-            csv += "," + String(readings[i].humidity, 2);
+            snprintf(buffer, sizeof(buffer), ",%.2f,%.2f", 
+                    readings[i].temperature, readings[i].humidity);
+            csv += buffer;
             break;
           case SENSOR_DS18B20:
-            csv += "," + String(readings[i].temperature, 2);
+            snprintf(buffer, sizeof(buffer), ",%.2f", readings[i].temperature);
+            csv += buffer;
             break;
           case SENSOR_ANALOG:
-            csv += "," + String(readings[i].value, 2);
+            snprintf(buffer, sizeof(buffer), ",%.2f", readings[i].value);
+            csv += buffer;
             break;
           default:
             break;
@@ -272,6 +284,7 @@ private:
   char sensorNames[Config::MAX_SENSORS][32];
   int sensorPins[Config::MAX_SENSORS] = {-1};
   int sensorCount;
+  bool i2cInitialized = false;
   
   void cleanup() {
     for (int i = 0; i < Config::MAX_SENSORS; i++) {
@@ -291,7 +304,43 @@ private:
         delete oneWireSensors[i];
         oneWireSensors[i] = nullptr;
       }
+      // Reset sensor type to avoid stale readings
+      sensorTypes[i] = SENSOR_NONE;
+      sensorPins[i] = -1;
     }
+  }
+  
+  // I2C bus recovery - clocks out stuck slaves by toggling SCL
+  void recoverI2CBus(int sdaPin, int sclPin) {
+    Wire.end();
+    
+    pinMode(sdaPin, INPUT_PULLUP);
+    pinMode(sclPin, OUTPUT);
+    
+    // Clock out up to 9 bits to release stuck slave
+    for (int i = 0; i < 9; i++) {
+      digitalWrite(sclPin, LOW);
+      delayMicroseconds(5);
+      digitalWrite(sclPin, HIGH);
+      delayMicroseconds(5);
+      
+      // Check if SDA is released
+      if (digitalRead(sdaPin) == HIGH) {
+        break;
+      }
+    }
+    
+    // Generate STOP condition
+    pinMode(sdaPin, OUTPUT);
+    digitalWrite(sdaPin, LOW);
+    delayMicroseconds(5);
+    digitalWrite(sclPin, HIGH);
+    delayMicroseconds(5);
+    digitalWrite(sdaPin, HIGH);
+    delayMicroseconds(5);
+    
+    // Reinitialize I2C
+    Wire.begin(sdaPin, sclPin);
   }
   
   void initBME280(int index, const SensorConfig& config) {
@@ -334,6 +383,11 @@ private:
     oneWireSensors[index] = new OneWire(config.pin);
     dallasSensors[index] = new DallasTemperature(oneWireSensors[index]);
     dallasSensors[index]->begin();
+    
+    // Set to 10-bit resolution for faster reads (0.25°C precision, ~187ms vs 750ms for 12-bit)
+    dallasSensors[index]->setResolution(10);
+    // Enable async/non-blocking mode
+    dallasSensors[index]->setWaitForConversion(false);
     
     sensorTypes[index] = SENSOR_DS18B20;
     strncpy(sensorNames[index], config.name, sizeof(sensorNames[index]) - 1);
@@ -396,6 +450,18 @@ private:
     if (index < 0 || index >= Config::MAX_SENSORS || !dallasSensors[index]) return;
     
     dallasSensors[index]->requestTemperatures();
+    
+    // Wait for conversion with timeout (10-bit = ~187ms, add margin)
+    unsigned long startTime = millis();
+    while (!dallasSensors[index]->isConversionComplete()) {
+      if (millis() - startTime > 300) {  // 300ms timeout
+        readings[index].valid = false;
+        Serial.printf("DS18B20 sensor %d: Conversion timeout\n", index);
+        return;
+      }
+      delay(10);  // Short delay to avoid busy-waiting
+    }
+    
     float temp = dallasSensors[index]->getTempCByIndex(0);
     
     // Validate temperature is within DS18B20 range
@@ -416,8 +482,17 @@ private:
   void readAnalog(int index) {
     if (index < 0 || index >= Config::MAX_SENSORS || sensorPins[index] < 0) return;
     
-    int rawValue = analogRead(sensorPins[index]);
-    // ESP32 ADC is 12-bit (0-4095)
+    // Multisampling for noise reduction
+    const int numSamples = 8;
+    uint32_t sum = 0;
+    for (int i = 0; i < numSamples; i++) {
+      sum += analogRead(sensorPins[index]);
+      delayMicroseconds(50);
+    }
+    int rawValue = sum / numSamples;
+    
+    // ESP32-S2 ADC is 13-bit (0-8191), but analogRead returns 12-bit by default
+    // Using default 12-bit for compatibility
     if (rawValue >= 0 && rawValue <= 4095) {
       readings[index].value = rawValue * (3.3 / 4095.0);
       readings[index].valid = true;

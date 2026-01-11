@@ -38,6 +38,10 @@ public:
     }
   }
   
+  ~DataLogger() {
+    bufferPrefs.end();
+  }
+  
   bool begin(int csPin) {
     this->csPin = csPin;
     lastFlushTime = millis();
@@ -56,8 +60,21 @@ public:
     
     Serial.println("Initializing SD card...");
     
-    if (!SD.begin(csPin)) {
-      Serial.println("SD card initialization failed!");
+    // Try multiple times - SD cards can be flaky
+    int retries = 3;
+    while (retries > 0) {
+      if (SD.begin(csPin)) {
+        break;
+      }
+      retries--;
+      if (retries > 0) {
+        Serial.printf("SD init failed, retrying... (%d attempts left)\n", retries);
+        delay(500);
+      }
+    }
+    
+    if (retries == 0) {
+      Serial.println("SD card initialization failed after retries!");
       sdInitialized = false;
       return false;
     }
@@ -123,8 +140,13 @@ public:
       } else {
         // Buffer full, force flush then add current data
         Serial.println("Buffer full, forcing flush...");
-        flushBuffer();
+        if (!flushBuffer()) {
+          // Flush failed, try direct write to SD
+          Serial.println("Flush failed, attempting direct SD write...");
+          return writeToSD(data);
+        }
         
+        // After successful flush, bufferCount should be 0
         // Store current data point
         char key[16];
         snprintf(key, sizeof(key), "d%d", bufferCount);
@@ -328,6 +350,14 @@ public:
     return true;
   }
   
+  void powerDown() {
+    if (sdInitialized) {
+      SD.end();
+      sdInitialized = false;
+      Serial.println("SD card powered down");
+    }
+  }
+  
   String getCardInfo() const {
     if (!sdInitialized) return "Not initialized";
     
@@ -389,9 +419,37 @@ public:
       return false;
     }
     
+    size_t fileSize = file.size();
+    
+    // Pre-allocate string buffer to avoid fragmentation
+    // Use PSRAM if available for large files
     content = "";
-    while (file.available()) {
-      content += (char)file.read();
+    if (psramFound() && fileSize > 4096) {
+      // For large files with PSRAM, read in larger chunks
+      content.reserve(fileSize + 1);
+      
+      // Use PSRAM buffer for reading
+      size_t bufSize = std::min((size_t)8192, fileSize);
+      char* buffer = (char*)ps_malloc(bufSize);
+      if (buffer) {
+        while (file.available()) {
+          size_t bytesRead = file.read((uint8_t*)buffer, bufSize - 1);
+          buffer[bytesRead] = '\0';
+          content += buffer;
+        }
+        free(buffer);
+      } else {
+        // Fallback to character-by-character if PSRAM alloc fails
+        while (file.available()) {
+          content += (char)file.read();
+        }
+      }
+    } else {
+      // Standard approach for smaller files or no PSRAM
+      content.reserve(fileSize + 1);
+      while (file.available()) {
+        content += (char)file.read();
+      }
     }
     
     file.close();
